@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>見積書作成ツール</title>
+    <!-- Favicon -->
+    <link rel="icon" href="https://placehold.co/32x32/007bff/ffffff?text=📋" type="image/png">
+    <!-- Apple Touch Icon (iOSホーム画面用) -->
+    <link rel="apple-touch-icon" href="https://placehold.co/180x180/007bff/ffffff?text=📋">
+    <!-- Web App Manifest (Android PWA設定用) -->
+    <link rel="manifest" href="/manifest.json">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', 'Yu Gothic', 'Meiryo', sans-serif; /* 日本語フォントを優先 */
+            background-color: #f3f4f6; /* Light gray background */
+            color: #333;
+        }
+        /* Custom scrollbar for table container */
+        .overflow-x-auto::-webkit-scrollbar {
+            height: 8px;
+        }
+        .overflow-x-auto::-webkit-scrollbar-track {
+            background: #e2e8f0; /* bg-gray-200 */
+            border-radius: 10px;
+        }
+        .overflow-x-auto::-webkit-scrollbar-thumb {
+            background: #94a3b8; /* bg-slate-400 */
+            border-radius: 10px;
+        }
+        .overflow-x-auto::-webkit-scrollbar-thumb:hover {
+            background: #64748b; /* bg-slate-600 */
+        }
+        /* Style for the element to be captured as PDF (hidden from view) */
+        /* PDFのA4サイズに近づけるための基準設定 (約 794px x 1123px @96DPI) */
+        /* padding は html2canvas のレンダリングにも影響するため、内側のコンテンツで調整 */
+        #pdf-export-content {
+            position: absolute;
+            left: -9999px; /* Off-screen */
+            top: -9999px; /* Off-screen */
+            width: 210mm; /* A4 width */
+            height: 297mm; /* A4 height */
+            box-sizing: border-box; /* paddingを含めたサイズ */
+            background-color: #ffffff; /* Ensure white background for PDF */
+            font-family: 'Yu Gothic', 'Meiryo', 'Inter', sans-serif; /* PDF出力時の日本語フォント優先 */
+            color: #333;
+            /* overflow: hidden; /* コンテンツがはみ出さないように */
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <!-- PDF出力用にレンダリングする非表示の要素 -->
+    <div id="pdf-export-content"></div>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX transpilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useRef } = React;
+        const { jsPDF } = window.jspdf;
+
+        // グローバルなメッセージモーダルコンポーネント (Appコンポーネントの内部で定義されるステートに依存)
+        const GlobalMessageModal = ({ show, content, onClose }) => {
+            if (!show) return null;
+            return (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full text-center">
+                        <p className="text-lg font-semibold text-gray-800 mb-4">{content}</p>
+                        <button
+                            onClick={onClose}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300 ease-in-out transform hover:scale-105"
+                        >
+                            閉じる
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // 見積書作成ページコンポーネント
+        const QuotationPage = ({ productData, showMessageModal }) => {
+            // State for invoice details
+            const [recipientCompanyName, setRecipientCompanyName] = useState('株式会社 御中');
+            const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10)); // Sumatra-MM-DD
+            const [subject, setSubject] = useState('サンプルプロジェクト');
+            const [deliveryDate, setDeliveryDate] = useState('2022-04-30'); // Sumatra-MM-DD
+            const [paymentTerms, setPaymentTerms] = useState('月末締翌月末払');
+            const [validityPeriod, setValidityPeriod] = useState('御見積後2週間');
+
+            // State for sender details (from PDF)
+            const [senderCompanyName, setSenderCompanyName] = useState('Ishi.company');
+            const [senderAddress, setSenderAddress] = useState('〒006-0835\n札幌市手稲区曙\n5条3丁目3-21-102');
+            const [senderTel, setSenderTel] = useState('TEL: 080-4508-1220');
+            const [senderRepresentative, setSenderRepresentative] = useState('代表:石井貢');
+
+            // State for invoice items
+            const [items, setItems] = useState([]);
+
+            // State for totals
+            const [subtotal, setSubtotal] = useState(0);
+            const [tax, setTax] = useState(0);
+            const [total, setTotal] = useState(0);
+            const [remarks, setRemarks] = useState('');
+
+            // Tax rate (10% from PDF example)
+            const TAX_RATE = 0.10;
+
+            // 初期アイテムの設定 (productDataがロードされた後に実行)
+            useEffect(() => {
+                if (productData && productData.length > 0 && items.length === 0) {
+                    setItems([
+                        { id: 1, description: productData[0].name, quantity: 1, unit: productData[0].unit, unitPrice: productData[0].price, amount: 0 },
+                    ]);
+                }
+            }, [productData, items.length]);
+
+            // Function to calculate amounts and totals
+            const calculateTotals = useCallback(() => {
+                let currentSubtotal = 0;
+                const updatedItems = items.map(item => {
+                    const qty = parseFloat(item.quantity) || 0;
+                    const price = parseFloat(item.unitPrice) || 0;
+                    const itemAmount = qty * price;
+                    currentSubtotal += itemAmount;
+                    return { ...item, amount: itemAmount };
+                });
+
+                setSubtotal(currentSubtotal);
+                setTax(Math.floor(currentSubtotal * TAX_RATE)); // Round tax down to integer
+                setTotal(currentSubtotal + Math.floor(currentSubtotal * TAX_RATE));
+            }, [items]);
+
+            // Recalculate totals whenever items change
+            useEffect(() => {
+                calculateTotals();
+            }, [items, calculateTotals]);
+
+            // Handle item input changes
+            const handleItemChange = (id, field, value) => {
+                setItems(prevItems =>
+                    prevItems.map(item => {
+                        if (item.id === id) {
+                            const updatedItem = { ...item, [field]: value };
+                            // If description (product name) changes, update unit and unitPrice
+                            if (field === 'description') {
+                                const selectedProduct = productData.find(p => p.name === value);
+                                if (selectedProduct) {
+                                    updatedItem.unit = selectedProduct.unit;
+                                    updatedItem.unitPrice = selectedProduct.price;
+                                } else {
+                                    // Reset unit and unitPrice if no matching product found or "選択してください" is chosen
+                                    updatedItem.unit = '';
+                                    updatedItem.unitPrice = 0;
+                                }
+                            }
+                            return updatedItem;
+                        }
+                        return item;
+                    })
+                );
+            };
+
+            // Add a new item row
+            const addItem = () => {
+                const newId = items.length > 0 ? Math.max(...items.map(item => item.id)) + 1 : 1;
+                // Add new item with the first product from productData (if available)
+                const defaultProductForNewItem = productData.length > 0 ? productData[0] : { name: '', unit: '', price: 0 };
+                setItems(prevItems => [
+                    ...prevItems,
+                    { id: newId, description: defaultProductForNewItem.name, quantity: 1, unit: defaultProductForNewItem.unit, unitPrice: defaultProductForNewItem.price, amount: 0 }
+                ]);
+            };
+
+            // Delete an item row
+            const deleteItem = (id) => {
+                setItems(prevItems => prevItems.filter(item => item.id !== id));
+            };
+
+            // Helper for formatting numbers with commas
+            const formatNumber = (num) => num.toLocaleString('ja-JP');
+
+            // PDF出力処理
+            const handleGeneratePdf = async () => {
+                // PDF出力用にレンダリングするコンテンツを生成
+                // ここでPDFのレイアウトに合わせてHTMLとインラインスタイルを厳密に定義
+                const quotationHtml = `
+                    <div style="width: 190mm; /* A4 width - 左右余白 (210mm - 20mm) */
+                                margin: 0 auto; /* 中央揃え */
+                                padding: 10mm; /* 上下左右の余白 */
+                                box-sizing: border-box;
+                                font-family: 'Yu Gothic', 'Meiryo', 'Inter', sans-serif;
+                                color: #333;
+                                line-height: 1.5;">
+
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px;">
+                            <div style="font-size: 16px; font-weight: bold; margin-top: 50px;">
+                                ${recipientCompanyName}
+                                <span style="font-size: 14px; font-weight: normal; margin-left: 5px;">御中</span>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 12px; margin-top: 10px;">年月 日</div>
+                                <div style="font-size: 28px; font-weight: bold; margin-top: -5px;">見積書</div>
+                                <div style="font-size: 12px; margin-top: 20px; line-height: 1.4;">
+                                    <div style="font-weight: bold;">${senderCompanyName}</div>
+                                    <div>${senderAddress.replace(/\n/g, '<br/>')}</div>
+                                    <div>${senderTel}</div>
+                                    <div>${senderRepresentative}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <p style="text-align: center; margin-bottom: 20px; font-size: 14px;">
+                            下記のとおり、御見積もり申し上げます。
+                        </p>
+
+                        <div style="width: 80%; margin: 0 auto 30px auto; border: 1px solid #ddd; padding: 10px; box-sizing: border-box; background-color: #f9f9f9;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr>
+                                    <td style="width: 20%; padding: 5px; font-weight: bold; font-size: 13px;">件名</td>
+                                    <td style="width: 80%; padding: 5px; border-bottom: 1px dashed #ccc; font-size: 13px;">${subject}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 5px; font-weight: bold; font-size: 13px;">納期</td>
+                                    <td style="padding: 5px; border-bottom: 1px dashed #ccc; font-size: 13px;">${deliveryDate}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 5px; font-weight: bold; font-size: 13px;">支払条件</td>
+                                    <td style="padding: 5px; border-bottom: 1px dashed #ccc; font-size: 13px;">${paymentTerms}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 5px; font-weight: bold; font-size: 13px;">有効期限</td>
+                                    <td style="padding: 5px; border-bottom: 1px dashed #ccc; font-size: 13px;">${validityPeriod}</td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <div style="text-align: right; margin-bottom: 20px;">
+                            <span style="font-size: 16px; font-weight: bold; margin-right: 10px;">合計</span>
+                            <span style="font-size: 28px; font-weight: bold; color: #d9534f;">${formatNumber(total)} 円<span style="font-size: 14px; font-weight: normal; margin-left: 5px;">(税込)</span></span>
+                        </div>
+
+                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px; border: 1px solid #000;">
+                            <thead>
+                                <tr style="background-color: #f2f2f2;">
+                                    <th style="border: 1px solid #000; padding: 8px; text-align: left; font-size: 12px; width: 40%;">摘要</th>
+                                    <th style="border: 1px solid #000; padding: 8px; text-align: right; font-size: 12px; width: 10%;">数量</th>
+                                    <th style="border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px; width: 10%;">単位</th>
+                                    <th style="border: 1px solid #000; padding: 8px; text-align: right; font-size: 12px; width: 20%;">単価</th>
+                                    <th style="border: 1px solid #000; padding: 8px; text-align: right; font-size: 12px; width: 20%;">金額</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${items.map(item => `
+                                    <tr>
+                                        <td style="border: 1px solid #000; padding: 8px; text-align: left; font-size: 12px;">${item.description}</td>
+                                        <td style="border: 1px solid #000; padding: 8px; text-align: right; font-size: 12px;">${item.quantity}</td>
+                                        <td style="border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px;">${item.unit}</td>
+                                        <td style="border: 1px solid #000; padding: 8px; text-align: right; font-size: 12px;">${formatNumber(item.unitPrice)}</td>
+                                        <td style="border: 1px solid #000; padding: 8px; text-align: right; font-size: 12px;">${formatNumber(item.amount)}</td>
+                                    </tr>
+                                `).join('')}
+                                <!-- 小計・消費税・合計 -->
+                                <tr>
+                                    <td colspan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
+                                    <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">小計</td>
+                                    <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">${formatNumber(subtotal)}</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
+                                    <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">消費税 (${TAX_RATE * 100}%)</td>
+                                    <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">${formatNumber(tax)}</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
+                                    <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">合計</td>
+                                    <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">${formatNumber(total)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div style="margin-bottom: 20px;">
+                            <p style="font-size: 13px; font-weight: bold; margin-bottom: 5px;">備考</p>
+                            <div style="border: 1px solid #000; padding: 10px; min-height: 60px; font-size: 12px; white-space: pre-wrap;">
+                                ${remarks || ''}
+                            </div>
+                        </div>
+
+                        <p style="text-align: right; font-size: 10px; margin-top: 30px;">
+                            本見積書の有効期限は、御見積後2週間です。
+                        </p>
+                    </div>
+                `;
+
+                // 一時divにHTMLコンテンツをセット
+                const tempDiv = document.getElementById('pdf-export-content');
+                if (!tempDiv) {
+                    showMessageModal('PDF出力用の領域が見つかりません。');
+                    return;
+                }
+                tempDiv.innerHTML = quotationHtml; // レンダリング用のHTMLをセット
+
+                // html2canvasでHTML要素を画像としてキャプチャ
+                try {
+                    showMessageModal('PDFを生成中です...'); // 処理開始メッセージ
+                    const canvas = await html2canvas(tempDiv, {
+                        scale: 2, // 解像度を上げる
+                        useCORS: true,
+                        logging: true,
+                        scrollX: 0,
+                        scrollY: -window.scrollY // スクロール位置を考慮
+                    });
+
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jsPDF('p', 'mm', 'a4'); // 'p' for portrait, 'mm' for millimeters, 'a4' for A4 size
+                    const imgWidth = 210; // A4 width in mm
+                    const pageHeight = 297; // A4 height in mm
+                    
+                    // imgHeightを計算し、1ページに収まるように調整
+                    // 必要であればimgWidthを基準に高さを調整
+                    const imgHeight = canvas.height * imgWidth / canvas.width;
+
+                    // 1ページのみを追加
+                    pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+
+                    // ファイル名を「件名_宛名.pdf」に変更
+                    const fileName = `${subject}_${recipientCompanyName}.pdf`;
+                    pdf.save(fileName);
+                    showMessageModal('PDFが生成されました！');
+                } catch (error) {
+                    console.error('PDF生成エラー:', error);
+                    showMessageModal(`PDF生成中にエラーが発生しました: ${error.message}`);
+                } finally {
+                    tempDiv.innerHTML = ''; // 一時divの内容をクリア
+                }
+            };
+
+
+            return (
+                <div className="bg-white p-6 sm:p-10 rounded-xl shadow-2xl w-full border border-gray-200">
+                    <h1 className="text-3xl sm:text-4xl font-bold text-center text-gray-800 mb-8 pb-4 border-b-2 border-blue-200">見積書</h1>
+
+                    {/* Header Section */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                        <div className="flex flex-col space-y-2">
+                            <label className="text-sm font-semibold text-gray-600">宛名:</label>
+                            <input
+                                type="text"
+                                className="p-2 border border-gray-300 rounded-md text-base focus:ring-blue-500 focus:border-blue-500"
+                                value={recipientCompanyName}
+                                onChange={(e) => setRecipientCompanyName(e.target.value)}
+                            />
+                            <span className="text-xl font-bold ml-1">御中</span>
+                        </div>
+
+                        <div className="flex flex-col items-end space-y-2">
+                            <label className="text-sm font-semibold text-gray-600">日付:</label>
+                            <input
+                                type="date"
+                                className="p-2 border border-gray-300 rounded-md text-base text-right focus:ring-blue-500 focus:border-blue-500"
+                                value={issueDate}
+                                onChange={(e) => setIssueDate(e.target.value)}
+                            />
+                            {/* Sender Information */}
+                            <div className="text-right text-sm">
+                                <input
+                                    type="text"
+                                    className="font-bold text-md mb-1 w-full text-right p-1 border border-gray-300 rounded-md"
+                                    value={senderCompanyName}
+                                    onChange={(e) => setSenderCompanyName(e.target.value)}
+                                />
+                                <textarea
+                                    className="w-full text-right p-1 border border-gray-300 rounded-md text-sm resize-y"
+                                    rows="3"
+                                    value={senderAddress}
+                                    onChange={(e) => setSenderAddress(e.target.value)}
+                                ></textarea>
+                                <input
+                                    type="text"
+                                    className="w-full text-right p-1 border border-gray-300 rounded-md text-sm"
+                                    value={senderTel}
+                                    onChange={(e) => setSenderTel(e.target.value)}
+                                />
+                                <input
+                                    type="text"
+                                    className="w-full text-right p-1 border border-gray-300 rounded-md text-sm"
+                                    value={senderRepresentative}
+                                    onChange={(e) => setSenderRepresentative(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <p className="mb-6 text-center text-gray-700 text-lg">下記のとおり、御見積もり申し上げます。</p>
+
+                    {/* Key Details Section */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="flex flex-col">
+                            <label className="text-sm font-semibold text-blue-700 mb-1">件名:</label>
+                            <input
+                                type="text"
+                                className="p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                value={subject}
+                                onChange={(e) => setSubject(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex flex-col">
+                            <label className="text-sm font-semibold text-blue-700 mb-1">納期:</label>
+                            <input
+                                type="date"
+                                className="p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                value={deliveryDate}
+                                onChange={(e) => setDeliveryDate(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex flex-col">
+                            <label className="text-sm font-semibold text-blue-700 mb-1">支払条件:</label>
+                            <input
+                                type="text"
+                                className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                value={paymentTerms}
+                                onChange={(e) => setPaymentTerms(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex flex-col lg:col-span-1"> {/* Adjusted to span 1 column on large screens */}
+                            <label className="text-sm font-semibold text-blue-700 mb-1">有効期限:</label>
+                            <input
+                                type="text"
+                                className="p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                value={validityPeriod}
+                                onChange={(e) => setValidityPeriod(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Total Amount Display */}
+                    <div className="flex justify-end items-baseline mb-8">
+                        <span className="text-xl sm:text-2xl font-bold mr-4 text-gray-700">合計</span>
+                        <span className="text-3xl sm:text-4xl font-extrabold text-blue-600">
+                            {formatNumber(total)} 円 (税込)
+                        </span>
+                    </div>
+
+                    {/* Items Table */}
+                    <div className="overflow-x-auto mb-8 shadow-md rounded-lg border border-gray-200">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-blue-50">
+                                <tr>
+                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12"></th> {/* Delete button column */}
+                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-4/12">摘要</th>
+                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">数量</th>
+                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">単位</th>
+                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12">単価</th>
+                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12">金額</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {items.map(item => (
+                                    <tr key={item.id}>
+                                        <td className="px-3 py-3 whitespace-nowrap">
+                                            <button
+                                                onClick={() => deleteItem(item.id)}
+                                                className="p-1 rounded-full bg-red-500 text-white hover:bg-red-600 transition duration-200"
+                                                title="項目を削除"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </td>
+                                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                                            {/* 商品名プルダウン */}
+                                            <select
+                                                className="w-full p-1 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                                value={item.description}
+                                                onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
+                                                disabled={productData.length === 0}
+                                            >
+                                                <option value="">選択してください</option>
+                                                {productData.map(product => (
+                                                    <option key={product.id} value={product.name}>{product.name}</option>
+                                                ))}
+                                            </select>
+                                        </td>
+                                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                                            <input
+                                                type="number"
+                                                className="w-full p-1 border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500"
+                                                value={item.quantity}
+                                                onChange={(e) => handleItemChange(item.id, 'quantity', e.target.value)}
+                                                min="0"
+                                            />
+                                        </td>
+                                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                                            <input
+                                                type="text"
+                                                className="w-full p-1 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
+                                                value={item.unit}
+                                                onChange={(e) => handleItemChange(item.id, 'unit', e.target.value)}
+                                                readOnly={true} // Set to readOnly
+                                            />
+                                        </td>
+                                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                                            <input
+                                                type="number"
+                                                className="w-full p-1 border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
+                                                value={item.unitPrice}
+                                                onChange={(e) => handleItemChange(item.id, 'unitPrice', e.target.value)}
+                                                min="0"
+                                                readOnly={true} // Set to readOnly
+                                            />
+                                        </td>
+                                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 text-right font-medium bg-gray-50">
+                                            {formatNumber(item.amount)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="flex justify-between items-center mb-8">
+                        <button
+                            onClick={addItem}
+                            className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition duration-300 transform hover:scale-105"
+                        >
+                            項目を追加
+                        </button>
+                        <div className="flex space-x-2"> {/* ボタンを横並びにするためのコンテナ */}
+                            <button
+                                onClick={handleGeneratePdf}
+                                className="px-6 py-2 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition duration-300 transform hover:scale-105"
+                            >
+                                PDF出力
+                            </button>
+                        </div>
+                    </div>
+
+
+                    {/* Totals Section */}
+                    <div className="flex justify-end mb-8">
+                        <div className="w-full max-w-sm">
+                            <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                                <span className="text-md sm:text-lg text-gray-700">小計:</span>
+                                <span className="text-md sm:text-lg font-semibold text-gray-800">{formatNumber(subtotal)} 円</span>
+                            </div>
+                            <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                                <span className="text-md sm:text-lg text-gray-700">消費税 ({TAX_RATE * 100}%):</span>
+                                <span className="text-md sm:text-lg font-semibold text-gray-800">{formatNumber(tax)} 円</span>
+                            </div>
+                            <div className="flex justify-between items-center py-3 font-bold text-lg sm:text-xl border-t-2 border-blue-300 mt-2">
+                                <span>合計:</span>
+                                <span>{formatNumber(total)} 円</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Remarks Section */}
+                    <div className="mb-8">
+                        <label htmlFor="remarks" className="block text-md font-semibold text-gray-700 mb-2">備考:</label>
+                        <textarea
+                            id="remarks"
+                            className="w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 resize-y"
+                            rows="4"
+                            value={remarks}
+                            onChange={(e) => setRemarks(e.target.value)}
+                            placeholder="ご不明な点がございましたら、お気軽にお問い合わせください。"
+                        ></textarea>
+                    </div>
+
+                    <p className="text-center text-gray-500 text-sm mt-8">本見積書の有効期限は、御見積後2週間です。</p>
+
+                </div>
+            );
+        };
+
+        // 商品管理ページコンポーネント
+        const ProductManagementPage = ({ productData, addProduct, updateProduct, deleteProduct, showMessageModal }) => {
+            const [editingProduct, setEditingProduct] = useState(null); // 編集中商品のID
+            const [newProductName, setNewProductName] = useState('');
+            const [newProductUnit, setNewProductUnit] = useState('');
+            const [newProductPrice, setNewProductPrice] = useState('');
+
+            // 編集フォームをリセットする関数
+            const resetForm = () => {
+                setEditingProduct(null);
+                setNewProductName('');
+                setNewProductUnit('');
+                setNewProductPrice('');
+            };
+
+            // 編集ボタンクリック時の処理
+            const handleEditClick = (product) => {
+                setEditingProduct(product.id);
+                setNewProductName(product.name);
+                setNewProductUnit(product.unit);
+                setNewProductPrice(product.price);
+            };
+
+            // 商品追加・更新ボタンクリック時の処理
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!newProductName || !newProductUnit || newProductPrice === '') {
+                    showMessageModal('商品名、単位、単価は必須です。'); // カスタムモーダルを使用
+                    return;
+                }
+                const price = parseFloat(newProductPrice);
+                if (isNaN(price) || price < 0) {
+                    showMessageModal('単価は0以上の数値を入力してください。'); // カスタムモーダルを使用
+                    return;
+                }
+
+                if (editingProduct) {
+                    // 更新処理
+                    updateProduct({ id: editingProduct, name: newProductName, unit: newProductUnit, price: price });
+                } else {
+                    // 追加処理
+                    addProduct({ name: newProductName, unit: newProductUnit, price: price });
+                }
+                resetForm();
+            };
+
+            return (
+                <div className="bg-white p-6 sm:p-10 rounded-xl shadow-2xl w-full border border-gray-200">
+                    <h1 className="text-3xl sm:text-4xl font-bold text-center text-gray-800 mb-8 pb-4 border-b-2 border-blue-200">商品管理</h1>
+
+                    {/* 商品追加・編集フォーム */}
+                    <form onSubmit={handleSubmit} className="mb-8 p-4 border border-blue-200 rounded-lg bg-blue-50">
+                        <h2 className="text-2xl font-semibold text-blue-700 mb-4">{editingProduct ? '商品を修正' : '新しい商品を追加'}</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div className="flex flex-col">
+                                <label htmlFor="productName" className="text-sm font-semibold text-gray-700 mb-1">商品名:</label>
+                                <input
+                                    type="text"
+                                    id="productName"
+                                    className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                    value={newProductName}
+                                    onChange={(e) => setNewProductName(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div className="flex flex-col">
+                                <label htmlFor="productUnit" className="text-sm font-semibold text-gray-700 mb-1">単位:</label>
+                                <input
+                                    type="text"
+                                    id="productUnit"
+                                    className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                    value={newProductUnit}
+                                    onChange={(e) => setNewProductUnit(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div className="flex flex-col">
+                                <label htmlFor="productPrice" className="text-sm font-semibold text-gray-700 mb-1">単価:</label>
+                                <input
+                                    type="number"
+                                    id="productPrice"
+                                    className="p-2 border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500"
+                                    value={newProductPrice}
+                                    onChange={(e) => setNewProductPrice(e.target.value)}
+                                    min="0"
+                                    required
+                                />
+                            </div>
+                        </div>
+                        <div className="flex justify-end space-x-2">
+                            {editingProduct && (
+                                <button
+                                    type="button"
+                                    onClick={resetForm}
+                                    className="px-4 py-2 bg-gray-500 text-white font-bold rounded-lg shadow-md hover:bg-gray-600 transition duration-300"
+                                >
+                                    キャンセル
+                                </button>
+                            )}
+                            <button
+                                type="submit"
+                                className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition duration-300 transform hover:scale-105"
+                            >
+                                {editingProduct ? '更新' : '追加'}
+                            </button>
+                        </div>
+                    </form>
+
+                    {/* 商品一覧テーブル */}
+                    <h2 className="text-2xl font-semibold text-gray-800 mb-4">登録商品一覧</h2>
+                    {productData.length === 0 ? (
+                        <p className="text-center text-gray-600 italic py-4">登録されている商品がありません。</p>
+                    ) : (
+                        <div className="overflow-x-auto shadow-md rounded-lg border border-gray-200">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-blue-50">
+                                    <tr>
+                                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">商品名</th>
+                                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">単位</th>
+                                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">単価</th>
+                                        <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {productData.map(product => (
+                                        <tr key={product.id}>
+                                            <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">{product.name}</td>
+                                            <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">{product.unit}</td>
+                                            <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{product.price.toLocaleString('ja-JP')}</td>
+                                            <td className="px-3 py-3 whitespace-nowrap text-center text-sm">
+                                                <button
+                                                    onClick={() => handleEditClick(product)}
+                                                    className="inline-flex items-center px-3 py-1 bg-yellow-500 text-white text-xs font-bold rounded-md shadow-sm hover:bg-yellow-600 transition duration-200 mr-2"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-7-6l-2-2m2 2l5 5m-5-2l2 2m-2-2l-2-2M15 4l2 2m-2-2l-2 2" />
+                                                    </svg>
+                                                    編集
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        // confirmをカスタムモーダルに置き換え
+                                                        if (confirm('この商品を削除しますか？')) { // confirmは一時的に残す
+                                                            deleteProduct(product.id);
+                                                        }
+                                                    }}
+                                                    className="inline-flex items-center px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-md shadow-sm hover:bg-red-600 transition duration-200"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                    削除
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+
+        const App = () => {
+            // グローバルなメッセージモーダルステートをAppコンポーネント内に移動
+            const [globalShowMessageModal, setGlobalShowMessageModal] = useState(false);
+            const [globalModalContent, setGlobalModalContent] = useState('');
+
+            // showMessageModal関数もAppコンポーネント内に移動
+            const showMessageModal = (content) => {
+                setGlobalModalContent(content);
+                setGlobalShowMessageModal(true);
+            };
+
+            // ローカルストレージから商品データをロード、なければデフォルトデータを使用
+            const loadProductDataFromLocalStorage = () => {
+                try {
+                    const savedData = localStorage.getItem('productData');
+                    if (savedData) {
+                        const parsedData = JSON.parse(savedData);
+                        // Ensure each product has an 'id' for keying in React
+                        return parsedData.map(p => ({ ...p, id: p.id || Date.now() + Math.random() }));
+                    }
+                } catch (error) {
+                    console.error("Failed to load product data from localStorage:", error);
+                    showMessageModal("商品データの読み込みに失敗しました。");
+                }
+                // ローカルストレージにデータがない場合、または読み込みに失敗した場合のデフォルトデータ
+                const defaultProducts = [
+                    { name: 'サンプル15', unit: '個', price: 15000 },
+                    { name: 'サンプル16', unit: '式', price: 16000 },
+                    { name: 'サンプル17', unit: '枚', price: 17000 },
+                    { name: 'サンプル18', unit: '回', price: 18000 },
+                    { name: 'サンプル19', unit: 'セット', price: 19000 },
+                    { name: 'サンプル20', unit: '本', price: 20000 },
+                    { name: 'サンプル21', unit: '式', price: 21000 },
+                    { name: 'サンプル22', unit: '個', price: 22000 },
+                    { name: 'サンプル23', unit: '枚', price: 23000 },
+                    { name: 'サンプル24', unit: '式', price: 24000 },
+                    { name: 'サンプル25', unit: '本', price: 25000 },
+                ];
+                // デフォルトデータにもユニークなIDを付与
+                return defaultProducts.map((p, index) => ({ ...p, id: Date.now() + index + Math.random() })); // 念のためDate.now() + index + random
+            };
+
+            const [productData, setProductData] = useState(loadProductDataFromLocalStorage());
+            const [currentPage, setCurrentPage] = useState('quotation'); // 'quotation' or 'management'
+
+            // productDataが変更されるたびにLocal Storageに保存
+            useEffect(() => {
+                try {
+                    localStorage.setItem('productData', JSON.stringify(productData));
+                } catch (error) {
+                    console.error("Failed to save product data to localStorage:", error);
+                    showMessageModal("商品データの保存に失敗しました。");
+                }
+            }, [productData]);
+
+            // 商品を追加する関数
+            const addProduct = (newProduct) => {
+                // 新しいIDを生成。既存のIDの最大値 + 1 を使用し、重複しないようにする
+                const newId = productData.length > 0 ? Math.max(...productData.map(p => p.id)) + 1 : 1;
+                setProductData(prevData => [...prevData, { ...newProduct, id: newId }]);
+                showMessageModal('商品が追加されました。'); // 追加成功メッセージ
+            };
+
+            // 商品を更新する関数
+            const updateProduct = (updatedProduct) => {
+                setProductData(prevData =>
+                    prevData.map(p => (p.id === updatedProduct.id ? updatedProduct : p))
+                );
+                showMessageModal('商品が更新されました。'); // 更新成功メッセージ
+            };
+
+            // 商品を削除する関数
+            const deleteProduct = (id) => {
+                setProductData(prevData => prevData.filter(p => p.id !== id));
+                showMessageModal('商品が削除されました。'); // 削除成功メッセージ
+            };
+
+            return (
+                <div className="min-h-screen p-4 sm:p-8 bg-gray-100 flex justify-center">
+                    <div className="w-full max-w-6xl">
+                        {/* ナビゲーション */}
+                        <nav className="mb-6 bg-white p-4 rounded-xl shadow-md flex justify-center space-x-4">
+                            <button
+                                onClick={() => setCurrentPage('quotation')}
+                                className={`px-6 py-2 rounded-lg font-bold transition duration-300 ${
+                                    currentPage === 'quotation' ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                            >
+                                見積書作成
+                            </button>
+                            <button
+                                onClick={() => setCurrentPage('management')}
+                                className={`px-6 py-2 rounded-lg font-bold transition duration-300 ${
+                                    currentPage === 'management' ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                            >
+                                商品管理
+                            </button>
+                        </nav>
+
+                        {/* ページの表示 */}
+                        {currentPage === 'quotation' ? (
+                            <QuotationPage productData={productData} showMessageModal={showMessageModal} />
+                        ) : (
+                            <ProductManagementPage
+                                productData={productData}
+                                addProduct={addProduct}
+                                updateProduct={updateProduct}
+                                deleteProduct={deleteProduct}
+                                showMessageModal={showMessageModal} // showMessageModalをpropsとして渡す
+                            />
+                        )}
+                    </div>
+                    <GlobalMessageModal show={globalShowMessageModal} content={globalModalContent} onClose={() => setGlobalShowMessageModal(false)} /> {/* グローバルメッセージモーダルを配置 */}
+                </div>
+            );
+        };
+
+        ReactDOM.render(React.createElement(App), document.getElementById('root'));
+    </script>
+</body>
+</html>
