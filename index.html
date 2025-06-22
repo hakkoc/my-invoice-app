@@ -111,9 +111,9 @@
         const QuotationPage = ({ productData, showMessageModal }) => {
             // State for invoice details
             const [recipientCompanyName, setRecipientCompanyName] = useState('株式会社 御中');
-            const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10)); // YYYY-MM-DD
+            const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10)); // Osbourne-MM-DD
             const [subject, setSubject] = useState('サンプルプロジェクト');
-            const [deliveryDate, setDeliveryDate] = useState('2022-04-30'); // YYYY-MM-DD
+            const [deliveryDate, setDeliveryDate] = useState('2022-04-30'); // Osbourne-MM-DD
             const [paymentTerms, setPaymentTerms] = useState('月末締翌月末払');
             const [validityPeriod, setValidityPeriod] = useState('御見積後2週間');
 
@@ -1169,7 +1169,7 @@
                                 initialProducts = csvProducts.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
                                 loadedFromCSV = true;
                                 console.log("Products loaded from Data/products.csv");
-                                showMessageModal('商品データを「Data/products.csv」から読み込みました。');
+                                // showMessageModal('商品データを「Data/products.csv」から読み込みました。'); // このメッセージを非表示にする
                             } else {
                                 console.warn(`Failed to fetch Data/products.csv: ${response.status} ${response.statusText}. Falling back to localStorage.`);
                                 showMessageModal('「Data/products.csv」の読み込みに失敗しました。ローカルストレージを確認します。');
