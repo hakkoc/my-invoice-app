@@ -7,12 +7,12 @@
     <!-- Favicon -->
     <link rel="icon" href="https://placehold.co/32x32/ffffff/000000?text=積" type="image/png">
     <!-- Apple Touch Icon (iOSホーム画面用) -->
-    <link rel="apple-touch-icon" href="https://placehold.co/180x180/ffffff/000000?text=積">
+    <link rel="apple-touch-icon" href="https://placehold.co/180x180/ffffff/000000?text=積">\
     <!-- Web App Manifest (Android PWA設定用) -->
     <link rel="manifest" href="/manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">\
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>\
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body {
@@ -110,18 +110,22 @@
         // 見積書作成ページコンポーネント
         const QuotationPage = ({ productData, showMessageModal }) => {
             // State for invoice details
-            const [recipientCompanyName, setRecipientCompanyName] = useState('株式会社 御中');
-            const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10)); // Osbourne-MM-DD
-            const [subject, setSubject] = useState('サンプルプロジェクト');
-            const [deliveryDate, setDeliveryDate] = useState('2022-04-30'); // Osbourne-MM-DD
-            const [paymentTerms, setPaymentTerms] = useState('月末締翌月末払');
-            const [validityPeriod, setValidityPeriod] = useState('御見積後2週間');
+            const [recipientCompanyName, setRecipientCompanyName] = useState(''); // 初期値なし
+            const [issueDate, setIssueDate] = useState(''); // 初期値なし
+            const [subject, setSubject] = useState(''); // 初期値なし
+            const [deliveryDate, setDeliveryDate] = useState(''); // 初期値なし
+            const [paymentTerms, setPaymentTerms] = useState(''); // 初期値なし
+            // 有効期限を「〇週間後」で管理するための新しいstate
+            const [weeksValidity, setWeeksValidity] = useState(2); 
 
             // State for sender details (from PDF)
-            const [senderCompanyName, setSenderCompanyName] = useState('Ishi.company');
-            const [senderAddress, setSenderAddress] = useState('〒006-0835\n札幌市手稲区曙\n5条3丁目3-21-102');
-            const [senderTel, setSenderTel] = useState('TEL: 080-4508-1220');
-            const [senderRepresentative, setSenderRepresentative] = useState('代表:石井貢');
+            // const [senderCompanyName, setSenderCompanyName] = useState(''); // 削除
+            // 郵便番号を2つの部分に分割して管理
+            const [senderPostalCodePart1, setSenderPostalCodePart1] = useState(''); // 初期値なし
+            const [senderPostalCodePart2, setSenderPostalCodePart2] = useState(''); // 初期値なし
+            const [senderAddress, setSenderAddress] = useState(''); // 初期値なし
+            const [senderTel, setSenderTel] = useState(''); // 初期値なし
+            const [senderRepresentative, setSenderRepresentative] = useState(''); // 初期値なし
 
             // State for invoice items
             // Initializing with one default item as requested
@@ -148,6 +152,9 @@
                     currentSubtotal += itemAmount;
                     return { ...item, amount: itemAmount };
                 });
+
+                // IMPORTANT FIX: Update the items state with the calculated amounts
+                setItems(updatedItems); // これが抜けていました
 
                 setSubtotal(currentSubtotal);
                 setTax(Math.floor(currentSubtotal * TAX_RATE)); // Round tax down to integer
@@ -205,69 +212,103 @@
             // Helper for formatting numbers with commas
             const formatNumber = (num) => num.toLocaleString('ja-JP');
 
+            // 郵便番号から住所を自動取得する関数
+            const fetchAddressByPostalCode = async () => {
+                const zipcode = `${senderPostalCodePart1}${senderPostalCodePart2}`; // 2つのパートを結合
+                if (zipcode.length !== 7) {
+                    return; // 7桁でなければ何もしない
+                }
+
+                try {
+                    const response = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zipcode}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json();
+
+                    if (data.results && data.results.length > 0) {
+                        const result = data.results[0];
+                        const newAddress = `${result.address1}${result.address2}${result.address3}`;
+                        setSenderAddress(newAddress);
+                        // showMessageModal('住所を自動入力しました。'); // このメッセージは非表示
+                    } else {
+                        // showMessageModal('該当する住所が見つかりませんでした。'); // このメッセージも非表示
+                    }
+                } catch (error) {
+                    console.error("住所取得エラー:", error);
+                    // showMessageModal(`住所の取得中にエラーが発生しました: ${error.message}`); // このメッセージも非表示
+                }
+            };
+
             // PDF出力処理
             const handleGeneratePdf = async () => {
+                // 有効期限の表示文字列を生成
+                const displayValidityPeriod = `御見積後${weeksValidity}週間`;
+                // 郵便番号を結合
+                const fullSenderPostalCode = `${senderPostalCodePart1}-${senderPostalCodePart2}`;
+                const fullSenderAddress = `〒${fullSenderPostalCode}\n${senderAddress}`.replace(/\n/g, '<br/>');
+
                 // PDF出力用にレンダリングするコンテンツを生成
-                // ここでPDFのレイアウトに合わせてHTMLとインラインスタイルを厳密に定義
                 const quotationHtml = `
-                    <div style="width: 190mm; /* A4 width - 左右余白 (210mm - 20mm) */
+                    <div style="width: 200mm; /* A4 width - 左右余白 (210mm - 10mm) */
                                 margin: 0 auto; /* 中央揃え */
-                                padding: 10mm; /* 上下左右の余白 */
+                                padding: 5mm; /* 上下左右の余白 */
                                 box-sizing: border-box;
                                 font-family: 'Yu Gothic', 'Meiryo', 'Inter', sans-serif;
                                 color: #333;
-                                line-height: 1.5;">
+                                line-height: 1.4;">
 
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px;">
-                            <div style="font-size: 16px; font-weight: bold; margin-top: 50px;">
-                                ${recipientCompanyName}
-                                <span style="font-size: 14px; font-weight: normal; margin-left: 5px;">御中</span>
+                        <!-- 見積書タイトルをページ最上部中央に配置 -->
+                        <div style="font-size: 36px; font-weight: bold; text-align: center; margin-bottom: 20px; margin-top: 5mm;">見積書</div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+                            <div style="font-size: 20px; font-weight: bold; line-height: 1.3; border-bottom: 2px solid #000; display: inline-block; padding-bottom: 6px;">
+                                ${recipientCompanyName} 御中
                             </div>
                             <div style="text-align: right;">
-                                <div style="font-size: 12px; margin-top: 10px;">年月 日</div>
-                                <div style="font-size: 28px; font-weight: bold; margin-top: -5px;">見積書</div>
-                                <div style="font-size: 12px; margin-top: 20px; line-height: 1.4;">
-                                    <div style="font-weight: bold;">${senderCompanyName}</div>
-                                    <div>${senderAddress.replace(/\n/g, '<br/>')}</div>
-                                    <div>${senderTel}</div>
-                                    <div>${senderRepresentative}</div>
+                                <div style="font-size: 14px; margin-top: 0;">${issueDate || 'YYYY年MM月DD日'}</div>
+                                <div style="font-size: 12px; margin-top: 20px; line-height: 1.3;">
+                                    <div style="font-weight: bold; margin-bottom: 3px;">${senderRepresentative}</div>
+                                    <div style="margin-bottom: 3px;">${fullSenderAddress}</div>
+                                    ${senderTel ? `<div style="margin-bottom: 3px;">${senderTel}</div>` : ''}
+                                    ${senderRepresentative ? `<div style="font-weight: bold; margin-bottom: 10px;">${senderRepresentative}　<span style="border: 1px solid #000; width: 30px; height: 30px; margin-left: 5px; font-size: 16px; display: inline-flex; justify-content: center; align-items: center; box-sizing: border-box;">印</span></div>` : '<div style="font-weight: bold; margin-bottom: 10px;">　<span style="border: 1px solid #000; width: 30px; height: 30px; margin-left: 5px; font-size: 16px; display: inline-flex; justify-content: center; align-items: center; box-sizing: border-box;">印</span></div>'}
                                 </div>
                             </div>
                         </div>
 
-                        <p style="text-align: center; margin-bottom: 20px; font-size: 14px;">
-                            下記のとおり、御見積もり申し上げます。
-                        </p>
-
-                        <div style="width: 80%; margin: 0 auto 30px auto; border: 1px solid #ddd; padding: 10px; box-sizing: border-box; background-color: #f9f9f9;">
+                        <div style="width: 90%; margin: 0 auto 30px auto; border: 1px solid #000; padding: 12px; box-sizing: border-box; background-color: #f9f9f9;">
                             <table style="width: 100%; border-collapse: collapse;">
                                 <tr>
-                                    <td style="width: 20%; padding: 5px; font-weight: bold; font-size: 13px;">件名</td>
-                                    <td style="width: 80%; padding: 5px; border-bottom: 1px dashed #ccc; font-size: 13px;">${subject}</td>
+                                    <td style="width: 20%; padding: 8px; font-weight: bold; font-size: 13px; vertical-align: top; border-bottom: 1px solid #ccc;">件名</td>
+                                    <td style="width: 80%; padding: 8px; border-bottom: 1px solid #ccc; font-size: 13px;">${subject}</td>
                                 </tr>
                                 <tr>
-                                    <td style="padding: 5px; font-weight: bold; font-size: 13px;">納期</td>
-                                    <td style="padding: 5px; border-bottom: 1px dashed #ccc; font-size: 13px;">${deliveryDate}</td>
+                                    <td style="padding: 8px; font-weight: bold; font-size: 13px; vertical-align: top; border-bottom: 1px solid #ccc;">納期</td>
+                                    <td style="padding: 8px; border-bottom: 1px solid #ccc; font-size: 13px;">${deliveryDate}</td>
                                 </tr>
                                 <tr>
-                                    <td style="padding: 5px; font-weight: bold; font-size: 13px;">支払条件</td>
-                                    <td style="padding: 5px; border-bottom: 1px dashed #ccc; font-size: 13px;">${paymentTerms}</td>
+                                    <td style="padding: 8px; font-weight: bold; font-size: 13px; vertical-align: top; border-bottom: 1px solid #ccc;">支払条件</td>
+                                    <td style="padding: 8px; border-bottom: 1px solid #ccc; font-size: 13px;">${paymentTerms}</td>
                                 </tr>
                                 <tr>
-                                    <td style="padding: 5px; font-weight: bold; font-size: 13px;">有効期限</td>
-                                    <td style="padding: 5px; border-bottom: 1px dashed #ccc; font-size: 13px;">${validityPeriod}</td>
+                                    <td style="padding: 8px; font-weight: bold; font-size: 13px; vertical-align: top;">有効期限</td>
+                                    <td style="padding: 8px; font-size: 13px;">${displayValidityPeriod}</td>
                                 </tr>
                             </table>
                         </div>
 
-                        <div style="text-align: right; margin-bottom: 20px;">
-                            <span style="font-size: 16px; font-weight: bold; margin-right: 10px;">合計</span>
-                            <span style="font-size: 28px; font-weight: bold; color: #d9534f;">${formatNumber(total)} 円<span style="font-size: 14px; font-weight: normal; margin-left: 5px;">(税込)</span></span>
+                        <!-- 「下記の通り、御見積もり申し上げます。」を合計金額の直前に移動 -->
+                        <div style="font-size: 14px; margin-bottom: 20px; text-align: right;">
+                            下記の通り、御見積もり申し上げます。
+                        </div>
+                        <div style="text-align: right; margin-bottom: 25px; padding-right: 5mm;">
+                            <span style="font-size: 20px; font-weight: bold; margin-right: 15px;">合計</span>
+                            <span style="font-size: 36px; font-weight: bold; color: #000; padding-bottom: 5px; border-bottom: 2px solid #000; display: inline-block;">${formatNumber(total)} 円<span style="font-size: 16px; font-weight: normal; margin-left: 8px;">(税込)</span></span>
                         </div>
 
                         <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px; border: 1px solid #000;">
                             <thead>
-                                <tr style="background-color: #f2f2f2;">
+                                <tr style="background-color: #e0e0e0;">
                                     <th style="border: 1px solid #000; padding: 8px; text-align: left; font-size: 12px; width: 40%;">摘要</th>
                                     <th style="border: 1px solid #000; padding: 8px; text-align: right; font-size: 12px; width: 10%;">数量</th>
                                     <th style="border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px; width: 10%;">単位</th>
@@ -286,17 +327,17 @@
                                     </tr>
                                 `).join('')}
                                 <!-- 小計・消費税・合計 -->
-                                <tr>
+                                <tr style="background-color: #f9f9f9;">
                                     <td colSpan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">小計</td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">${formatNumber(subtotal)}</td>
                                 </tr>
-                                <tr>
+                                <tr style="background-color: #f9f9f9;">
                                     <td colSpan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">消費税 (${TAX_RATE * 100}%)</td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">${formatNumber(tax)}</td>
                                 </tr>
-                                <tr>
+                                <tr style="background-color: #f9f9f9;">
                                     <td colSpan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">合計</td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">${formatNumber(total)}</td>
@@ -311,8 +352,8 @@
                             </div>
                         </div>
 
-                        <p style="text-align: right; font-size: 10px; margin-top: 30px;">
-                            本見積書の有効期限は、御見積後2週間です。
+                        <p style="text-align: right; font-size: 11px; margin-top: 30px;">
+                            本見積書の有効期限は、${displayValidityPeriod}です。
                         </p>
                     </div>
                 `;
@@ -349,7 +390,7 @@
                     pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
 
                     // ファイル名を「件名_宛名.pdf」に変更
-                    const fileName = `${subject}_${recipientCompanyName}.pdf`;
+                    const fileName = `${subject || '見積書'}_${recipientCompanyName || '宛名なし'}.pdf`; // ファイル名を空にしない
                     pdf.save(fileName);
                     showMessageModal('PDFが生成されました！');
                 } catch (error) {
@@ -367,7 +408,7 @@
                 React.createElement(
                     "h1",
                     { className: "text-3xl sm:text-4xl font-bold text-center text-gray-800 mb-8 pb-4 border-b-2 border-blue-200" },
-                    "見積書"
+                    "見積書作成ツール" // タイトル変更
                 ),
 
                 /* Header Section */
@@ -376,75 +417,145 @@
                     { className: "grid grid-cols-1 md:grid-cols-2 gap-6 mb-8" },
                     React.createElement(
                         "div",
-                        { className: "flex flex-col space-y-2" },
+                        { className: "flex items-center space-x-2 w-full md:w-auto md:self-start" }, // flex-row, items-centerで横並びに
                         React.createElement(
                             "label",
-                            { className: "text-sm font-semibold text-gray-600" },
-                            "宛名:"
+                            { className: "text-sm font-semibold text-gray-600 w-auto" }, // ラベル幅を自動調整
+                            "見積書の宛名:"
                         ),
                         React.createElement("input", {
                             type: "text",
-                            className: "p-2 border border-gray-300 rounded-md text-base focus:ring-blue-500 focus:border-blue-500",
+                            className: "p-2 border border-gray-300 rounded-md text-base focus:ring-blue-500 focus:border-blue-500 flex-grow max-w-xs", // flex-growで伸びるように、max-w-xsで幅を小さく
                             value: recipientCompanyName,
-                            onChange: (e) => setRecipientCompanyName(e.target.value)
-                        }),
-                        React.createElement(
-                            "span",
-                            { className: "text-xl font-bold ml-1" },
-                            "御中"
-                        )
+                            onChange: (e) => setRecipientCompanyName(e.target.value),
+                            placeholder: "例: 株式会社〇〇" 
+                        })
                     ),
 
                     React.createElement(
                         "div",
-                        { className: "flex flex-col items-end space-y-2" },
+                        { className: "flex flex-col items-start md:items-end space-y-4 w-full" }, // 日付と送付元情報のコンテナ
                         React.createElement(
-                            "label",
-                            { className: "text-sm font-semibold text-gray-600" },
-                            "日付:"
+                            "div",
+                            { className: "flex items-center space-x-2 w-full md:w-auto md:self-end" }, // 日付入力欄を左寄せ
+                            React.createElement(
+                                "label",
+                                { className: "text-sm font-semibold text-gray-600 w-auto" }, // ラベル幅を自動調整
+                                "日付:"
+                            ),
+                            React.createElement("input", {
+                                type: "date",
+                                className: "p-2 border border-gray-300 rounded-md text-base focus:ring-blue-500 focus:border-blue-500 flex-grow", // 入力欄をフレックスで伸ばす
+                                value: issueDate,
+                                onChange: (e) => setIssueDate(e.target.value)
+                            })
                         ),
-                        React.createElement("input", {
-                            type: "date",
-                            className: "p-2 border border-gray-300 rounded-md text-base text-right focus:ring-blue-500 focus:border-blue-500",
-                            value: issueDate,
-                            onChange: (e) => setIssueDate(e.target.value)
-                        }),
                         /* Sender Information */
                         React.createElement(
                             "div",
-                            { className: "text-right text-sm" },
-                            React.createElement("input", {
-                                type: "text",
-                                className: "font-bold text-md mb-1 w-full text-right p-1 border border-gray-300 rounded-md",
-                                value: senderCompanyName,
-                                onChange: (e) => setSenderCompanyName(e.target.value)
-                            }),
-                            React.createElement("textarea", {
-                                className: "w-full p-1 border border-gray-300 rounded-md text-sm resize-y",
-                                rows: "3",
-                                value: senderAddress,
-                                onChange: (e) => setSenderAddress(e.target.value)
-                            }),
-                            React.createElement("input", {
-                                type: "text",
-                                className: "w-full text-right p-1 border border-gray-300 rounded-md text-sm",
-                                value: senderTel,
-                                onChange: (e) => setSenderTel(e.target.value)
-                            }),
-                            React.createElement("input", {
-                                type: "text",
-                                className: "w-full text-right p-1 border border-gray-300 rounded-md text-sm",
-                                value: senderRepresentative,
-                                onChange: (e) => setSenderRepresentative(e.target.value)
-                            })
+                            { className: "text-right text-sm w-full md:w-auto md:ml-auto flex flex-col items-end space-y-2" }, // 送付元情報は右寄せ
+                            // 会社名 + 郵便番号 の行 (会社名入力欄を削除)
+                            React.createElement(
+                                "div",
+                                { className: "flex flex-wrap justify-end items-center gap-x-4 w-full" }, // Use gap-x-4 for horizontal spacing
+                                // 会社名入力欄は削除
+                                // 郵便番号入力フィールド
+                                React.createElement(
+                                    "div",
+                                    { className: "flex items-center" },
+                                    React.createElement(
+                                        "label",
+                                        { className: "text-sm font-semibold text-gray-600 mr-2" },
+                                        "郵便番号:"
+                                    ),
+                                    React.createElement(
+                                        "span",
+                                        { className: "mr-1" },
+                                        "〒"
+                                    ),
+                                    React.createElement("input", {
+                                        type: "text",
+                                        className: "w-16 p-1 border border-gray-300 rounded-md text-sm text-right focus:ring-blue-500 focus:border-blue-500",
+                                        value: senderPostalCodePart1,
+                                        onChange: (e) => setSenderPostalCodePart1(e.target.value),
+                                        onBlur: fetchAddressByPostalCode, // フォーカスが外れたら住所を取得
+                                        maxLength: "3",
+                                        placeholder: "000"
+                                    }),
+                                    React.createElement(
+                                        "span",
+                                        { className: "mx-1" }, // ハイフンの代わりにスペース
+                                        "-"
+                                    ),
+                                    React.createElement("input", {
+                                        type: "text",
+                                        className: "w-20 p-1 border border-gray-300 rounded-md text-sm text-right focus:ring-blue-500 focus:border-blue-500",
+                                        value: senderPostalCodePart2,
+                                        onChange: (e) => setSenderPostalCodePart2(e.target.value),
+                                        onBlur: fetchAddressByPostalCode, // フォーカスが外れたら住所を取得
+                                        maxLength: "4",
+                                        placeholder: "0000"
+                                    })
+                                )
+                            ),
+                            // 住所入力欄 (単独行)
+                            React.createElement(
+                                "div",
+                                { className: "flex items-start justify-end gap-x-2 w-full" }, // Consistent gap-x for alignment
+                                React.createElement(
+                                    "label",
+                                    { className: "text-sm font-semibold text-gray-600 mt-1" }, // textareaと高さを合わせるためmt-1
+                                    "住所:"
+                                ),
+                                React.createElement("textarea", {
+                                    className: "w-full p-1 border border-gray-300 rounded-md text-sm resize-y max-w-[280px]", /* Adjusted max-w for textarea */
+                                    rows: "3",
+                                    value: senderAddress,
+                                    onChange: (e) => setSenderAddress(e.target.value),
+                                    placeholder: "例: 東京都千代田区1-2-3" 
+                                })
+                            ),
+                            // 電話番号と代表者名入力欄
+                            React.createElement(
+                                "div",
+                                { className: "flex flex-wrap justify-end items-center gap-x-4 w-full" },
+                                // 電話番号入力欄
+                                React.createElement(
+                                    "div",
+                                    { className: "flex items-center space-x-2" },
+                                    React.createElement(
+                                        "label",
+                                        { className: "text-sm font-semibold text-gray-600" },
+                                        "電話番号:"
+                                    ),
+                                    React.createElement("input", {
+                                        type: "text",
+                                        className: "p-1 border border-gray-300 rounded-md text-sm max-w-[160px] text-right",
+                                        value: senderTel,
+                                        onChange: (e) => setSenderTel(e.target.value),
+                                        placeholder: "例: 090-1234-5678" 
+                                    })
+                                ),
+                                // 代表者名入力欄
+                                React.createElement(
+                                    "div",
+                                    { className: "flex items-center space-x-2" },
+                                    React.createElement(
+                                        "label",
+                                        { className: "text-sm font-semibold text-gray-600" },
+                                        "代表者名:"
+                                    ),
+                                    React.createElement("input", {
+                                        type: "text",
+                                        className: "p-1 border border-gray-300 rounded-md text-sm max-w-[160px] text-right",
+                                        value: senderRepresentative,
+                                        onChange: (e) => setSenderRepresentative(e.target.value),
+                                        placeholder: "例: 山田太郎" 
+                                    })
+                                )
+                            )
                         )
                     )
-                ),
-
-                React.createElement(
-                    "p",
-                    { className: "mb-6 text-center text-gray-700 text-lg" },
-                    "下記のとおり、御見積もり申し上げます。"
                 ),
 
                 /* Key Details Section */
@@ -463,7 +574,8 @@
                             type: "text",
                             className: "p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
                             value: subject,
-                            onChange: (e) => setSubject(e.target.value)
+                            onChange: (e) => setSubject(e.target.value),
+                            placeholder: "例: Webサイト制作費用" 
                         })
                     ),
                     React.createElement(
@@ -493,7 +605,8 @@
                             type: "text",
                             className: "p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
                             value: paymentTerms,
-                            onChange: (e) => setPaymentTerms(e.target.value)
+                            onChange: (e) => setPaymentTerms(e.target.value),
+                            placeholder: "例: 翌月末払い" 
                         })
                     ),
                     React.createElement(
@@ -504,12 +617,28 @@
                             { className: "text-sm font-semibold text-blue-700 mb-1" },
                             "有効期限:"
                         ),
-                        React.createElement("input", {
-                            type: "text",
-                            className: "p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
-                            value: validityPeriod,
-                            onChange: (e) => setValidityPeriod(e.target.value)
-                        })
+                        // 有効期限の入力フィールドを数値入力に変更
+                        React.createElement(
+                            "div",
+                            { className: "flex items-center" },
+                            React.createElement(
+                                "span",
+                                { className: "text-gray-700 mr-2" },
+                                "御見積後"
+                            ),
+                            React.createElement("input", {
+                                type: "number",
+                                className: "p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500 w-20 text-center", // 幅を調整
+                                value: weeksValidity,
+                                onChange: (e) => setWeeksValidity(parseInt(e.target.value) || 0),
+                                min: "0"
+                            }),
+                            React.createElement(
+                                "span",
+                                { className: "text-gray-700 ml-2" },
+                                "週間"
+                            )
+                        )
                     )
                 ),
 
@@ -602,7 +731,8 @@
                                         list: "product-names-datalist", // datalistと連携
                                         className: "w-full p-1 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
                                         value: item.description,
-                                        onChange: (e) => handleItemChange(item.id, 'description', e.target.value)
+                                        onChange: (e) => handleItemChange(item.id, 'description', e.target.value),
+                                        placeholder: "商品名またはサービス名" 
                                     }),
                                     React.createElement(
                                         "datalist",
@@ -624,7 +754,8 @@
                                     type: "text", // 読み取り専用を解除
                                     className: "w-full p-1 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
                                     value: item.unit,
-                                    onChange: (e) => handleItemChange(item.id, 'unit', e.target.value)
+                                    onChange: (e) => handleItemChange(item.id, 'unit', e.target.value), // 直接setItemUnitを呼び出す
+                                    placeholder: "個,式,枚など" 
                                 })),
                                 React.createElement("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-900" }, React.createElement("input", {
                                     type: "number", // 読み取り専用を解除
@@ -639,52 +770,6 @@
                                     formatNumber(item.amount)
                                 )
                             ))
-                        ),
-                        /* 小計・消費税・合計 */
-                        React.createElement(
-                            "tr",
-                            null,
-                            React.createElement("td", { colSpan: "3", className: "border: 1px solid #000; padding: 8px; text-align: left;" }),
-                            React.createElement(
-                                "td",
-                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
-                                "小計"
-                            ),
-                            React.createElement(
-                                "td",
-                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
-                                formatNumber(subtotal)
-                            )
-                        ),
-                        React.createElement(
-                            "tr",
-                            null,
-                            React.createElement("td", { colSpan: "3", className: "border: 1px solid #000; padding: 8px; text-align: left;" }),
-                            React.createElement(
-                                "td",
-                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
-                                `消費税 (${TAX_RATE * 100}%)`
-                            ),
-                            React.createElement(
-                                "td",
-                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
-                                formatNumber(tax)
-                            )
-                        ),
-                        React.createElement(
-                            "tr",
-                            null,
-                            React.createElement("td", { colSpan: "3", className: "border: 1px solid #000; padding: 8px; text-align: left;" }),
-                            React.createElement(
-                                "td",
-                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
-                                "合計"
-                            ),
-                            React.createElement(
-                                "td",
-                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
-                                formatNumber(total)
-                            )
                         )
                     )
                 ),
@@ -792,7 +877,7 @@
                 React.createElement(
                     "p",
                     { className: "text-center text-gray-500 text-sm mt-8" },
-                    "本見積書の有効期限は、御見積後2週間です。"
+                    `本見積書の有効期限は、御見積後${weeksValidity}週間です。`
                 )
             );
         };
@@ -900,7 +985,8 @@
                                 className: "p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
                                 value: newProductName,
                                 onChange: (e) => setNewProductName(e.target.value),
-                                required: true
+                                required: true,
+                                placeholder: "例: システム開発費" 
                             })
                         ),
                         React.createElement(
@@ -917,7 +1003,8 @@
                                 className: "p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
                                 value: newProductUnit,
                                 onChange: (e) => setNewProductUnit(e.target.value),
-                                required: true
+                                required: true,
+                                placeholder: "例: 式, 個, 枚" 
                             })
                         ),
                         React.createElement(
@@ -935,7 +1022,8 @@
                                 value: newProductPrice,
                                 onChange: (e) => setNewProductPrice(e.target.value),
                                 min: "0",
-                                required: true
+                                required: true,
+                                placeholder: "例: 10000" 
                             })
                         )
                     ),
@@ -960,8 +1048,8 @@
                             editingProduct ? '更新' : '追加'
                         )
                     )
-                ),
-
+                )
+,
                 /* CSVインポート/エクスポートボタン */
                 React.createElement(
                     "div",
@@ -1169,7 +1257,8 @@
                                 initialProducts = csvProducts.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
                                 loadedFromCSV = true;
                                 console.log("Products loaded from Data/products.csv");
-                                // showMessageModal('商品データを「Data/products.csv」から読み込みました。'); // この行をコメントアウトまたは削除
+                                // 起動時のData/products.csvからの読み込み時はメッセージを表示しない
+                                // showMessageModal('商品データを「Data/products.csv」から読み込みました。'); 
                             } else {
                                 console.warn(`Failed to fetch Data/products.csv: ${response.status} ${response.statusText}. Falling back to localStorage.`);
                                 showMessageModal('「Data/products.csv」の読み込みに失敗しました。ローカルストレージを確認します。');
