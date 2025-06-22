@@ -182,7 +182,10 @@
             const [senderRepresentative, setSenderRepresentative] = useState('代表:石井貢');
 
             // State for invoice items
-            const [items, setItems] = useState([]);
+            // Initializing with one default item
+            const [items, setItems] = useState([
+                { id: 1, description: '', quantity: 1, unit: '', unitPrice: 0, amount: 0 }
+            ]);
 
             // State for totals
             const [subtotal, setSubtotal] = useState(0);
