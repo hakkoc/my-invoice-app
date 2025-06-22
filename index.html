@@ -57,51 +57,7 @@
     <!-- PDF出力用にレンダリングする非表示の要素 -->
     <div id="pdf-export-content"></div>
 
-    <!-- Firebase SDKs -->
-    <script type="module">
-        // Firebase SDKs のインポート
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, doc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // グローバル変数として利用可能なものを定義 (Canvas環境から提供される)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        console.log("Firebase Global Vars Check:");
-        console.log("  __app_id:", typeof __app_id !== 'undefined' ? __app_id : 'undefined (using default)');
-        console.log("  __firebase_config:", typeof __firebase_config !== 'undefined' ? 'present' : 'undefined (using empty obj)');
-        console.log("  __initial_auth_token:", typeof __initial_auth_token !== 'undefined' ? 'present' : 'undefined (using null)');
-
-        try {
-            // Firebaseサービスの初期化 (グローバルにアクセスできるようにwindowにアタッチ)
-            window.firebaseApp = initializeApp(firebaseConfig);
-            window.db = getFirestore(window.firebaseApp);
-            window.auth = getAuth(window.firebaseApp);
-            window.signInAnonymously = signInAnonymously;
-            window.signInWithCustomToken = signInWithCustomToken;
-            window.onAuthStateChanged = onAuthStateChanged;
-            window.collection = collection;
-            window.addDoc = addDoc;
-            window.setDoc = setDoc;
-            window.updateDoc = updateDoc;
-            window.deleteDoc = deleteDoc;
-            window.onSnapshot = onSnapshot;
-            window.doc = doc;
-            window.getDocs = getDocs; // getDocsも追加
-            window.appId = appId; // appIdもグローバルに設定
-
-            console.log("Firebase services initialized successfully.");
-            // Firebaseの準備ができたことを示すカスタムイベントを発火
-            document.dispatchEvent(new CustomEvent('firebase-ready', { detail: { success: true } }));
-        } catch (e) {
-            console.error("Firebase initialization failed:", e);
-            document.dispatchEvent(new CustomEvent('firebase-ready', { detail: { success: false, error: e.message } }));
-        }
-    </script>
-    
-    <!-- React and Babel for JSX transpilation - Moved AFTER Firebase SDKs -->
+    <!-- React and Babel for JSX transpilation -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
@@ -110,22 +66,8 @@
         const { useState, useEffect, useCallback, useRef } = React;
         const { jsPDF } = window.jspdf;
 
-        // フォールバック用の商品データ（エラー時や初期ロード時に使用）
-        const FALLBACK_PRODUCT_DATA = [
-            { id: 'fallback-1', name: 'エラー商品1', unit: '式', price: 1000 },
-            { id: 'fallback-2', name: 'エラー商品2', unit: '個', price: 2000 },
-            { id: 'fallback-3', name: 'エラー商品3', unit: '枚', price: 3000 },
-            { id: 'fallback-4', name: 'エラー商品4', unit: '回', price: 4000 },
-            { id: 'fallback-5', name: 'エラー商品5', unit: '式', price: 5000 },
-            { id: 'fallback-6', name: 'エラー商品6', unit: '個', price: 6000 },
-            { id: 'fallback-7', name: 'エラー商品7', unit: '枚', price: 7000 },
-            { id: 'fallback-8', name: 'エラー商品8', unit: '回', price: 8000 },
-            { id: 'fallback-9', name: 'エラー商品9', unit: '式', price: 9000 },
-            { id: 'fallback-10', name: 'エラー商品10', unit: '個', price: 10000 },
-            { id: 'fallback-11', name: 'エラー商品11', unit: '枚', price: 11000 },
-            { id: 'fallback-12', name: 'エラー商品12', unit: '回', price: 12000 },
-        ];
-
+        // localStorageのキー
+        const LOCAL_STORAGE_KEY = 'quotation_tool_products';
 
         // グローバルなメッセージモーダルコンポーネント
         const GlobalMessageModal = ({ show, content, onClose, onConfirm, showConfirmButton }) => {
@@ -169,9 +111,9 @@
         const QuotationPage = ({ productData, showMessageModal }) => {
             // State for invoice details
             const [recipientCompanyName, setRecipientCompanyName] = useState('株式会社 御中');
-            const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10)); // Osbourne-MM-DD
+            const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10)); // YYYY-MM-DD
             const [subject, setSubject] = useState('サンプルプロジェクト');
-            const [deliveryDate, setDeliveryDate] = useState('2022-04-30'); // Osbourne-MM-DD
+            const [deliveryDate, setDeliveryDate] = useState('2022-04-30'); // YYYY-MM-DD
             const [paymentTerms, setPaymentTerms] = useState('月末締翌月末払');
             const [validityPeriod, setValidityPeriod] = useState('御見積後2週間');
 
@@ -182,7 +124,7 @@
             const [senderRepresentative, setSenderRepresentative] = useState('代表:石井貢');
 
             // State for invoice items
-            // Initializing with one default item
+            // Initializing with one default item as requested
             const [items, setItems] = useState([
                 { id: 1, description: '', quantity: 1, unit: '', unitPrice: 0, amount: 0 }
             ]);
@@ -856,7 +798,7 @@
         };
 
         // 商品管理ページコンポーネント
-        const ProductManagementPage = ({ productData, addProduct, updateProduct, deleteProduct, showMessageModal, showConfirmModal }) => {
+        const ProductManagementPage = ({ productData, addProduct, updateProduct, deleteProduct, showMessageModal, showConfirmModal, importProductsFromCsv, exportProductsToCsv }) => {
             const [editingProduct, setEditingProduct] = useState(null); // 編集中商品のID
             const [newProductName, setNewProductName] = useState('');
             const [newProductUnit, setNewProductUnit] = useState('');
@@ -903,6 +845,23 @@
                 } catch (error) {
                     console.error("商品操作エラー:", error);
                     showMessageModal(`商品操作中にエラーが発生しました: ${error.message}`);
+                }
+            };
+
+            // CSVファイル選択ハンドラー
+            const handleFileChange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            importProductsFromCsv(event.target.result);
+                        } catch (error) {
+                            showMessageModal(`CSVファイルの読み込み中にエラーが発生しました: ${error.message}`);
+                            console.error("CSV import error:", error);
+                        }
+                    };
+                    reader.readAsText(file);
                 }
             };
 
@@ -1000,6 +959,32 @@
                             },
                             editingProduct ? '更新' : '追加'
                         )
+                    )
+                ),
+
+                /* CSVインポート/エクスポートボタン */
+                React.createElement(
+                    "div",
+                    { className: "mb-8 p-4 border border-green-200 rounded-lg bg-green-50 flex flex-col sm:flex-row justify-center items-center gap-4" },
+                    React.createElement(
+                        "label",
+                        { htmlFor: "csv-import-input", className: "px-6 py-2 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition duration-300 transform hover:scale-105 cursor-pointer" },
+                        "CSVからインポート"
+                    ),
+                    React.createElement("input", {
+                        type: "file",
+                        id: "csv-import-input",
+                        accept: ".csv,.txt",
+                        onChange: handleFileChange,
+                        className: "hidden"
+                    }),
+                    React.createElement(
+                        "button",
+                        {
+                            onClick: exportProductsToCsv,
+                            className: "px-6 py-2 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition duration-300 transform hover:scale-105"
+                        },
+                        "CSVにエクスポート"
                     )
                 ),
 
@@ -1113,14 +1098,10 @@
             const [globalShowConfirmButton, setGlobalShowConfirmButton] = useState(false);
             const [globalConfirmAction, setGlobalConfirmAction] = useState(null);
 
-            // 認証関連のステート
-            const [isFirebaseReady, setIsFirebaseReady] = useState(false);
-            const [userId, setUserId] = useState(null);
-            const [isLoading, setIsLoading] = useState(true); // ロード中表示用
-
             // 商品データとページ管理
             const [productData, setProductData] = useState([]);
             const [currentPage, setCurrentPage] = useState('quotation'); // 'quotation' or 'management'
+            const [isLoading, setIsLoading] = useState(true); // ローディング状態
 
             // メッセージモーダル表示関数
             const showMessageModal = (content) => {
@@ -1152,180 +1133,126 @@
                 closeGlobalModal();
             };
 
-            // Firebase初期化と認証
+            // localStorageからのデータ読み込み (初回ロード時のみ)
             useEffect(() => {
-                console.log("App useEffect: Setting up firebase-ready listener.");
-                const handleFirebaseReady = async (event) => {
-                    console.log("firebase-ready event received. Success:", event.detail.success);
-                    if (!event.detail.success) {
-                        console.warn("Firebase initialization failed in main script. Using fallback product data.");
-                        showMessageModal(`Firebaseの初期化に失敗しました: ${event.detail.error || '不明なエラー'}\n代替商品データを使用します。`);
-                        setProductData(FALLBACK_PRODUCT_DATA);
-                        setIsFirebaseReady(false);
-                        setIsLoading(false); // エラー時もローディングを解除
-                        console.log("isLoading set to false after Firebase init failure.");
-                        return;
+                try {
+                    const storedProducts = localStorage.getItem(LOCAL_STORAGE_KEY);
+                    if (storedProducts) {
+                        const parsedProducts = JSON.parse(storedProducts);
+                        // IDが重複しないように、新しいIDを割り当て直すなど、必要に応じて調整
+                        // 今回は単純なデモのため、そのまま使用。本番ではUUIDなど推奨
+                        setProductData(parsedProducts.map((p, index) => ({ ...p, id: p.id || index + 1 })));
+                    } else {
+                        // 初回起動時にデフォルトの商品を追加することも可能
+                        // setProductData([{ id: 1, name: 'デフォルト商品', unit: '個', price: 1000 }]);
                     }
+                    setIsLoading(false); // データロード完了
+                } catch (error) {
+                    console.error("Failed to load products from localStorage:", error);
+                    showMessageModal(`商品データの読み込みに失敗しました: ${error.message}`);
+                    setIsLoading(false); // エラー時もローディングを解除
+                }
+            }, []);
 
-                    if (window.db && window.auth) {
-                        try {
-                            console.log("Firebase SDK is available. Attempting to sign in.");
-                            // initialAuthTokenがあればそれを使用、なければ匿名認証
-                            if (window.initialAuthToken) {
-                                console.log("Signing in with custom token...");
-                                await window.signInWithCustomToken(window.auth, window.initialAuthToken);
-                            } else {
-                                console.log("Signing in anonymously...");
-                                await window.signInAnonymously(window.auth);
-                            }
-                            // 認証状態の変更を監視
-                            const unsubscribeAuth = window.onAuthStateChanged(window.auth, (user) => {
-                                if (user) {
-                                    console.log("User authenticated:", user.uid);
-                                    setUserId(user.uid);
-                                    setIsFirebaseReady(true); // 認証が完了したらFirebase準備完了
-                                    // Note: isLoading is intentionally NOT set to false here.
-                                    // It will be set to false once product data is fetched.
-                                } else {
-                                    console.log("No user signed in.");
-                                    setUserId(null); 
-                                    setIsFirebaseReady(false); 
-                                    setIsLoading(false); // 認証失敗/未認証の場合もローディングを解除
-                                    showMessageModal('認証されていません。一部機能が制限される場合があります。\n代替商品データを使用します。');
-                                    setProductData(FALLBACK_PRODUCT_DATA); // 認証失敗時も代替商品をロード
-                                    console.log("isLoading set to false after Auth failure.");
-                                }
-                            });
-                            // クリーンアップ関数で購読解除
-                            return () => unsubscribeAuth();
-                        } catch (error) {
-                            console.error("Firebase Auth Error:", error);
-                            showMessageModal(`認証エラー: ${error.message}\n代替商品データを使用します。`);
-                            setIsLoading(false); // エラー時もローディングを解除
-                            setProductData(FALLBACK_PRODUCT_DATA); // 認証エラー時も代替商品をロード
-                            console.log("isLoading set to false after Auth catch error.");
+            // productDataが変更されたらlocalStorageに保存
+            useEffect(() => {
+                if (!isLoading) { // 初期ロードが完了してから保存を開始
+                    try {
+                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(productData));
+                    } catch (error) {
+                        console.error("Failed to save products to localStorage:", error);
+                        showMessageModal(`商品データの保存に失敗しました: ${error.message}`);
+                    }
+                }
+            }, [productData, isLoading]);
+
+            // 商品を追加する関数 (localStorageへ)
+            const addProduct = async (newProduct) => {
+                // IDを生成 (簡易的な連番ID)
+                const newId = productData.length > 0 ? Math.max(...productData.map(p => p.id)) + 1 : 1;
+                const productWithId = { ...newProduct, id: newId };
+                setProductData(prevProducts => {
+                    const updated = [...prevProducts, productWithId];
+                    // 名前でソートして表示を整理
+                    return updated.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+                });
+                showMessageModal('商品が追加されました。');
+            };
+
+            // 商品を更新する関数 (localStorageへ)
+            const updateProduct = async (updatedProduct) => {
+                setProductData(prevProducts => {
+                    const updated = prevProducts.map(p => p.id === updatedProduct.id ? updatedProduct : p);
+                     // 名前でソートして表示を整理
+                    return updated.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+                });
+                showMessageModal('商品が更新されました。');
+            };
+
+            // 商品を削除する関数 (localStorageへ)
+            const deleteProduct = async (id) => {
+                setProductData(prevProducts => prevProducts.filter(p => p.id !== id));
+                showMessageModal('商品が削除されました。');
+            };
+
+            // CSVから商品をインポートする関数
+            const importProductsFromCsv = (csvString) => {
+                const lines = csvString.split('\n').filter(line => line.trim() !== '');
+                const newProducts = [];
+                let currentMaxId = productData.length > 0 ? Math.max(...productData.map(p => p.id)) : 0;
+
+                for (const line of lines) {
+                    const parts = line.split(',');
+                    if (parts.length === 3) { // name, unit, price
+                        const name = parts[0].trim();
+                        const unit = parts[1].trim();
+                        const price = parseFloat(parts[2].trim());
+
+                        if (name && unit && !isNaN(price)) {
+                            currentMaxId++;
+                            newProducts.push({ id: currentMaxId, name, unit, price });
+                        } else {
+                            console.warn("Invalid CSV row skipped:", line);
                         }
                     } else {
-                        // これはfirebase-readyイベントで処理されるはずなので、このパスは基本的には通らない
-                        // もしここに来たら、Firebase SDKの読み込み自体が失敗している可能性
-                        console.error("Firebase SDK (db or auth) not found in window object after firebase-ready event.");
-                        showMessageModal("Firebase SDKの読み込みに失敗しました。\n代替商品データを使用します。");
-                        setProductData(FALLBACK_PRODUCT_DATA);
-                        setIsLoading(false);
-                        console.log("isLoading set to false after Firebase SDK not found.");
+                        console.warn("Invalid CSV format skipped (expected 3 parts):", line);
                     }
-                };
+                }
 
-                // 'firebase-ready'イベントをリッスン
-                document.addEventListener('firebase-ready', handleFirebaseReady);
+                if (newProducts.length > 0) {
+                    setProductData(prevProducts => {
+                        // 既存の商品と重複しないようにマージ（名前で重複チェック、簡易的な例）
+                        const existingNames = new Set(prevProducts.map(p => p.name));
+                        const uniqueNewProducts = newProducts.filter(p => !existingNames.has(p.name));
+                        
+                        const mergedProducts = [...prevProducts, ...uniqueNewProducts];
+                        return mergedProducts.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+                    });
+                    showMessageModal(`${newProducts.length}件の商品をCSVからインポートしました。`);
+                } else {
+                    showMessageModal('有効な商品データがCSVファイルに見つかりませんでした。');
+                }
+            };
 
-                // コンポーネントアンマウント時にイベントリスナーをクリーンアップ
-                return () => {
-                    console.log("App useEffect: Cleaning up firebase-ready listener.");
-                    document.removeEventListener('firebase-ready', handleFirebaseReady);
-                };
-            }, []); // 空の依存配列で初回のみ実行
-
-            // Firestoreから商品データをリアルタイムで取得
-            useEffect(() => {
-                console.log("Product Data useEffect: isFirebaseReady:", isFirebaseReady, "userId:", userId, "isLoading:", isLoading);
-                // Firebaseが準備できていない、またはuserIdがまだ設定されていない場合は何もしない
-                // ただし、isFirebaseReadyがfalseの場合はFALLBACK_PRODUCT_DATAが既にセットされているはず
-                if (!isFirebaseReady || !userId) {
-                    console.log("Firestore data fetch skipped: isFirebaseReady or userId not set. Current isLoading:", isLoading);
-                    // isFirebaseReadyがfalseかつisLoadingがtrueの場合（初期ロード中）は、まだローディングを続ける
-                    // そうでない場合（isFirebaseReadyがfalseだがLoadingが解除されている場合、例えば認証エラー後）は、FALLBACK_PRODUCT_DATAが使われるべき
-                    if (!isFirebaseReady && isLoading) { // Only force fallback if Firebase not ready AND still loading
-                         console.log("Forcing isLoading to false and using fallback as Firebase is not ready.");
-                         setProductData(FALLBACK_PRODUCT_DATA); // 認証失敗/エラーでLoading解除済みの場合、念のためここで代替設定
-                         setIsLoading(false);
-                    }
+            // 商品をCSVにエクスポートする関数
+            const exportProductsToCsv = () => {
+                if (productData.length === 0) {
+                    showMessageModal('エクスポートする商品データがありません。');
                     return;
                 }
-
-                console.log("Attempting to fetch Firestore products for userId:", userId, "appId:", window.appId);
-                // public/data下に商品を保存することで、複数ユーザーで商品を共有できるようにする
-                const productsColRef = window.collection(window.db, `artifacts/${window.appId}/public/data/products`);
-                
-                // リアルタイムリスナーを設定
-                const unsubscribeFirestore = window.onSnapshot(productsColRef, (snapshot) => {
-                    console.log("Firestore snapshot received.");
-                    const products = [];
-                    snapshot.forEach(doc => {
-                        products.push({ id: doc.id, ...doc.data() });
-                    });
-                    // FirestoreデータはIDでソートされないので、ここでソートする（例: nameでソート）
-                    products.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-                    setProductData(products);
-                    setIsLoading(false); // データ取得が完了したらローディングを解除
-                    console.log("isLoading set to false after successful product data load.");
-                }, (error) => {
-                    console.error("Firestore Error fetching products:", error);
-                    showMessageModal(`商品データの取得エラー: ${error.message}\n代替商品データを使用します。`);
-                    setProductData(FALLBACK_PRODUCT_DATA); // エラー時も代替商品をロード
-                    setIsLoading(false); // エラー時もローディングを解除
-                    console.log("isLoading set to false after Firestore fetch error.");
-                });
-
-                // クリーンアップ関数を返す
-                return () => {
-                    console.log("Product Data useEffect: Cleaning up Firestore listener.");
-                    unsubscribeFirestore();
-                };
-            }, [isFirebaseReady, userId]); // isFirebaseReady と userId が変わるたびに再実行
-
-            // 商品を追加する関数 (Firestoreへ)
-            const addProduct = async (newProduct) => {
-                try {
-                    if (!isFirebaseReady) {
-                        showMessageModal('データベースが準備できていません。');
-                        return;
-                    }
-                    const productsColRef = window.collection(window.db, `artifacts/${window.appId}/public/data/products`);
-                    await window.addDoc(productsColRef, newProduct);
-                    showMessageModal('商品が追加されました。');
-                } catch (error) {
-                    console.error("商品追加エラー:", error);
-                    showMessageModal(`商品追加エラー: ${error.message}`);
-                }
+                const csvContent = productData.map(p => `${p.name},${p.unit},${p.price}`).join('\n');
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'products.csv';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showMessageModal('商品データをCSVファイルにエクスポートしました！');
             };
 
-            // 商品を更新する関数 (Firestoreへ)
-            const updateProduct = async (updatedProduct) => {
-                try {
-                    if (!isFirebaseReady) {
-                        showMessageModal('データベースが準備できていません。');
-                        return;
-                    }
-                    const productDocRef = window.doc(window.db, `artifacts/${window.appId}/public/data/products`, updatedProduct.id);
-                    // idフィールドはドキュメントIDなので、データからは除外して更新
-                    const { id, ...dataToUpdate } = updatedProduct; 
-                    await window.updateDoc(productDocRef, dataToUpdate);
-                    showMessageModal('商品が更新されました。');
-                } catch (error) {
-                    console.error("商品更新エラー:", error);
-                    showMessageModal(`商品更新エラー: ${error.message}`);
-                }
-            };
-
-            // 商品を削除する関数 (Firestoreへ)
-            const deleteProduct = async (id) => {
-                try {
-                    if (!isFirebaseReady) {
-                        showMessageModal('データベースが準備できていません。');
-                        return;
-                    }
-                    const productDocRef = window.doc(window.db, `artifacts/${window.appId}/public/data/products`, id);
-                    await window.deleteDoc(productDocRef);
-                    showMessageModal('商品が削除されました。');
-                } catch (error) {
-                    console.error("商品削除エラー:", error);
-                    showMessageModal(`商品削除エラー: ${error.message}`);
-                }
-            };
 
             if (isLoading) {
-                console.log("Rendering Loading... screen.");
                 return React.createElement(
                     "div",
                     { className: "min-h-screen p-4 sm:p-8 bg-gray-100 flex justify-center items-center" },
@@ -1343,17 +1270,6 @@
                 React.createElement(
                     "div",
                     { className: "w-full max-w-6xl" },
-                    /* ユーザーID表示 (複数ユーザーアプリの必須要件) */
-                    userId && React.createElement(
-                        "div",
-                        { className: "bg-gray-200 text-gray-700 p-2 rounded-md text-center text-sm mb-4" },
-                        "現在のユーザーID (共有データ用): ",
-                        React.createElement(
-                            "span",
-                            { className: "font-mono break-all" },
-                            userId
-                        )
-                    ),
                     /* ナビゲーション */
                     React.createElement(
                         "nav",
@@ -1388,7 +1304,9 @@
                         updateProduct: updateProduct,
                         deleteProduct: deleteProduct,
                         showMessageModal: showMessageModal,
-                        showConfirmModal: showConfirmModal
+                        showConfirmModal: showConfirmModal,
+                        importProductsFromCsv: importProductsFromCsv, // CSVインポート関数を渡す
+                        exportProductsToCsv: exportProductsToCsv    // CSVエクスポート関数を渡す
                     })
                 ),
                 /* グローバルメッセージモーダルを配置 */
