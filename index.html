@@ -57,30 +57,111 @@
     <!-- PDF出力用にレンダリングする非表示の要素 -->
     <div id="pdf-export-content"></div>
 
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // Firebase SDKs のインポート
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, doc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // グローバル変数として利用可能なものを定義 (Canvas環境から提供される)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        console.log("Firebase Global Vars Check:");
+        console.log("  __app_id:", typeof __app_id !== 'undefined' ? __app_id : 'undefined (using default)');
+        console.log("  __firebase_config:", typeof __firebase_config !== 'undefined' ? 'present' : 'undefined (using empty obj)');
+        console.log("  __initial_auth_token:", typeof __initial_auth_token !== 'undefined' ? 'present' : 'undefined (using null)');
+
+        try {
+            // Firebaseサービスの初期化 (グローバルにアクセスできるようにwindowにアタッチ)
+            window.firebaseApp = initializeApp(firebaseConfig);
+            window.db = getFirestore(window.firebaseApp);
+            window.auth = getAuth(window.firebaseApp);
+            window.signInAnonymously = signInAnonymously;
+            window.signInWithCustomToken = signInWithCustomToken;
+            window.onAuthStateChanged = onAuthStateChanged;
+            window.collection = collection;
+            window.addDoc = addDoc;
+            window.setDoc = setDoc;
+            window.updateDoc = updateDoc;
+            window.deleteDoc = deleteDoc;
+            window.onSnapshot = onSnapshot;
+            window.doc = doc;
+            window.getDocs = getDocs; // getDocsも追加
+            window.appId = appId; // appIdもグローバルに設定
+
+            console.log("Firebase services initialized successfully.");
+            // Firebaseの準備ができたことを示すカスタムイベントを発火
+            document.dispatchEvent(new CustomEvent('firebase-ready', { detail: { success: true } }));
+        } catch (e) {
+            console.error("Firebase initialization failed:", e);
+            document.dispatchEvent(new CustomEvent('firebase-ready', { detail: { success: false, error: e.message } }));
+        }
+    </script>
+    
+    <!-- React and Babel for JSX transpilation - Moved AFTER Firebase SDKs -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel for JSX transpilation -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <script type="text/babel">
+    
+    <!-- React Code - Transpiled from JSX manually -->
+    <script>
         const { useState, useEffect, useCallback, useRef } = React;
         const { jsPDF } = window.jspdf;
 
-        // グローバルなメッセージモーダルコンポーネント (Appコンポーネントの内部で定義されるステートに依存)
-        const GlobalMessageModal = ({ show, content, onClose }) => {
+        // フォールバック用の商品データ（エラー時や初期ロード時に使用）
+        const FALLBACK_PRODUCT_DATA = [
+            { id: 'fallback-1', name: 'エラー商品1', unit: '式', price: 1000 },
+            { id: 'fallback-2', name: 'エラー商品2', unit: '個', price: 2000 },
+            { id: 'fallback-3', name: 'エラー商品3', unit: '枚', price: 3000 },
+            { id: 'fallback-4', name: 'エラー商品4', unit: '回', price: 4000 },
+            { id: 'fallback-5', name: 'エラー商品5', unit: '式', price: 5000 },
+            { id: 'fallback-6', name: 'エラー商品6', unit: '個', price: 6000 },
+            { id: 'fallback-7', name: 'エラー商品7', unit: '枚', price: 7000 },
+            { id: 'fallback-8', name: 'エラー商品8', unit: '回', price: 8000 },
+            { id: 'fallback-9', name: 'エラー商品9', unit: '式', price: 9000 },
+            { id: 'fallback-10', name: 'エラー商品10', unit: '個', price: 10000 },
+            { id: 'fallback-11', name: 'エラー商品11', unit: '枚', price: 11000 },
+            { id: 'fallback-12', name: 'エラー商品12', unit: '回', price: 12000 },
+        ];
+
+
+        // グローバルなメッセージモーダルコンポーネント
+        const GlobalMessageModal = ({ show, content, onClose, onConfirm, showConfirmButton }) => {
             if (!show) return null;
-            return (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full text-center">
-                        <p className="text-lg font-semibold text-gray-800 mb-4">{content}</p>
-                        <button
-                            onClick={onClose}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300 ease-in-out transform hover:scale-105"
-                        >
-                            閉じる
-                        </button>
-                    </div>
-                </div>
+            return React.createElement(
+                "div",
+                { className: "fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4" },
+                React.createElement(
+                    "div",
+                    { className: "bg-white rounded-lg shadow-xl p-6 max-w-sm w-full text-center" },
+                    React.createElement(
+                        "p",
+                        { className: "text-lg font-semibold text-gray-800 mb-4" },
+                        content
+                    ),
+                    React.createElement(
+                        "div",
+                        { className: "flex justify-center space-x-4" },
+                        React.createElement(
+                            "button",
+                            {
+                                onClick: onClose,
+                                className: "bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300 ease-in-out transform hover:scale-105"
+                            },
+                            "閉じる"
+                        ),
+                        showConfirmButton && React.createElement(
+                            "button",
+                            {
+                                onClick: onConfirm,
+                                className: "bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300 ease-in-out transform hover:scale-105"
+                            },
+                            "削除"
+                        )
+                    )
+                )
             );
         };
 
@@ -88,9 +169,9 @@
         const QuotationPage = ({ productData, showMessageModal }) => {
             // State for invoice details
             const [recipientCompanyName, setRecipientCompanyName] = useState('株式会社 御中');
-            const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10)); // Sumatra-MM-DD
+            const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10)); // Osbourne-MM-DD
             const [subject, setSubject] = useState('サンプルプロジェクト');
-            const [deliveryDate, setDeliveryDate] = useState('2022-04-30'); // Sumatra-MM-DD
+            const [deliveryDate, setDeliveryDate] = useState('2022-04-30'); // Osbourne-MM-DD
             const [paymentTerms, setPaymentTerms] = useState('月末締翌月末払');
             const [validityPeriod, setValidityPeriod] = useState('御見積後2週間');
 
@@ -111,15 +192,6 @@
 
             // Tax rate (10% from PDF example)
             const TAX_RATE = 0.10;
-
-            // 初期アイテムの設定 (productDataがロードされた後に実行)
-            useEffect(() => {
-                if (productData && productData.length > 0 && items.length === 0) {
-                    setItems([
-                        { id: 1, description: productData[0].name, quantity: 1, unit: productData[0].unit, unitPrice: productData[0].price, amount: 0 },
-                    ]);
-                }
-            }, [productData, items.length]);
 
             // Function to calculate amounts and totals
             const calculateTotals = useCallback(() => {
@@ -148,17 +220,21 @@
                     prevItems.map(item => {
                         if (item.id === id) {
                             const updatedItem = { ...item, [field]: value };
-                            // If description (product name) changes, update unit and unitPrice
+                            
+                            // If description changes, try to autofill unit and unitPrice from productData
                             if (field === 'description') {
                                 const selectedProduct = productData.find(p => p.name === value);
                                 if (selectedProduct) {
-                                    updatedItem.unit = selectedProduct.unit;
-                                    updatedItem.unitPrice = selectedProduct.price;
-                                } else {
-                                    // Reset unit and unitPrice if no matching product found or "選択してください" is chosen
-                                    updatedItem.unit = '';
-                                    updatedItem.unitPrice = 0;
+                                    // Autofill only if values are not already manually set
+                                    if (item.unit === '' || item.unit === selectedProduct.unit) { // Only change if empty or matches old autofill
+                                        updatedItem.unit = selectedProduct.unit;
+                                    }
+                                    if (item.unitPrice === 0 || item.unitPrice === selectedProduct.price) { // Only change if 0 or matches old autofill
+                                        updatedItem.unitPrice = selectedProduct.price;
+                                    }
                                 }
+                                // If no match, or if user types a non-matching name, don't clear existing unit/unitPrice.
+                                // User can manually enter them.
                             }
                             return updatedItem;
                         }
@@ -170,11 +246,9 @@
             // Add a new item row
             const addItem = () => {
                 const newId = items.length > 0 ? Math.max(...items.map(item => item.id)) + 1 : 1;
-                // Add new item with the first product from productData (if available)
-                const defaultProductForNewItem = productData.length > 0 ? productData[0] : { name: '', unit: '', price: 0 };
                 setItems(prevItems => [
                     ...prevItems,
-                    { id: newId, description: defaultProductForNewItem.name, quantity: 1, unit: defaultProductForNewItem.unit, unitPrice: defaultProductForNewItem.price, amount: 0 }
+                    { id: newId, description: '', quantity: 1, unit: '', unitPrice: 0, amount: 0 }
                 ]);
             };
 
@@ -268,17 +342,17 @@
                                 `).join('')}
                                 <!-- 小計・消費税・合計 -->
                                 <tr>
-                                    <td colspan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
+                                    <td colSpan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">小計</td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">${formatNumber(subtotal)}</td>
                                 </tr>
                                 <tr>
-                                    <td colspan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
+                                    <td colSpan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">消費税 (${TAX_RATE * 100}%)</td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">${formatNumber(tax)}</td>
                                 </tr>
                                 <tr>
-                                    <td colspan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
+                                    <td colSpan="3" style="border: 1px solid #000; padding: 8px; text-align: left;"></td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">合計</td>
                                     <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;">${formatNumber(total)}</td>
                                 </tr>
@@ -342,246 +416,444 @@
             };
 
 
-            return (
-                <div className="bg-white p-6 sm:p-10 rounded-xl shadow-2xl w-full border border-gray-200">
-                    <h1 className="text-3xl sm:text-4xl font-bold text-center text-gray-800 mb-8 pb-4 border-b-2 border-blue-200">見積書</h1>
+            return React.createElement(
+                "div",
+                { className: "bg-white p-6 sm:p-10 rounded-xl shadow-2xl w-full border border-gray-200" },
+                React.createElement(
+                    "h1",
+                    { className: "text-3xl sm:text-4xl font-bold text-center text-gray-800 mb-8 pb-4 border-b-2 border-blue-200" },
+                    "見積書"
+                ),
 
-                    {/* Header Section */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                        <div className="flex flex-col space-y-2">
-                            <label className="text-sm font-semibold text-gray-600">宛名:</label>
-                            <input
-                                type="text"
-                                className="p-2 border border-gray-300 rounded-md text-base focus:ring-blue-500 focus:border-blue-500"
-                                value={recipientCompanyName}
-                                onChange={(e) => setRecipientCompanyName(e.target.value)}
-                            />
-                            <span className="text-xl font-bold ml-1">御中</span>
-                        </div>
+                /* Header Section */
+                React.createElement(
+                    "div",
+                    { className: "grid grid-cols-1 md:grid-cols-2 gap-6 mb-8" },
+                    React.createElement(
+                        "div",
+                        { className: "flex flex-col space-y-2" },
+                        React.createElement(
+                            "label",
+                            { className: "text-sm font-semibold text-gray-600" },
+                            "宛名:"
+                        ),
+                        React.createElement("input", {
+                            type: "text",
+                            className: "p-2 border border-gray-300 rounded-md text-base focus:ring-blue-500 focus:border-blue-500",
+                            value: recipientCompanyName,
+                            onChange: (e) => setRecipientCompanyName(e.target.value)
+                        }),
+                        React.createElement(
+                            "span",
+                            { className: "text-xl font-bold ml-1" },
+                            "御中"
+                        )
+                    ),
 
-                        <div className="flex flex-col items-end space-y-2">
-                            <label className="text-sm font-semibold text-gray-600">日付:</label>
-                            <input
-                                type="date"
-                                className="p-2 border border-gray-300 rounded-md text-base text-right focus:ring-blue-500 focus:border-blue-500"
-                                value={issueDate}
-                                onChange={(e) => setIssueDate(e.target.value)}
-                            />
-                            {/* Sender Information */}
-                            <div className="text-right text-sm">
-                                <input
-                                    type="text"
-                                    className="font-bold text-md mb-1 w-full text-right p-1 border border-gray-300 rounded-md"
-                                    value={senderCompanyName}
-                                    onChange={(e) => setSenderCompanyName(e.target.value)}
-                                />
-                                <textarea
-                                    className="w-full text-right p-1 border border-gray-300 rounded-md text-sm resize-y"
-                                    rows="3"
-                                    value={senderAddress}
-                                    onChange={(e) => setSenderAddress(e.target.value)}
-                                ></textarea>
-                                <input
-                                    type="text"
-                                    className="w-full text-right p-1 border border-gray-300 rounded-md text-sm"
-                                    value={senderTel}
-                                    onChange={(e) => setSenderTel(e.target.value)}
-                                />
-                                <input
-                                    type="text"
-                                    className="w-full text-right p-1 border border-gray-300 rounded-md text-sm"
-                                    value={senderRepresentative}
-                                    onChange={(e) => setSenderRepresentative(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                    </div>
+                    React.createElement(
+                        "div",
+                        { className: "flex flex-col items-end space-y-2" },
+                        React.createElement(
+                            "label",
+                            { className: "text-sm font-semibold text-gray-600" },
+                            "日付:"
+                        ),
+                        React.createElement("input", {
+                            type: "date",
+                            className: "p-2 border border-gray-300 rounded-md text-base text-right focus:ring-blue-500 focus:border-blue-500",
+                            value: issueDate,
+                            onChange: (e) => setIssueDate(e.target.value)
+                        }),
+                        /* Sender Information */
+                        React.createElement(
+                            "div",
+                            { className: "text-right text-sm" },
+                            React.createElement("input", {
+                                type: "text",
+                                className: "font-bold text-md mb-1 w-full text-right p-1 border border-gray-300 rounded-md",
+                                value: senderCompanyName,
+                                onChange: (e) => setSenderCompanyName(e.target.value)
+                            }),
+                            React.createElement("textarea", {
+                                className: "w-full p-1 border border-gray-300 rounded-md text-sm resize-y",
+                                rows: "3",
+                                value: senderAddress,
+                                onChange: (e) => setSenderAddress(e.target.value)
+                            }),
+                            React.createElement("input", {
+                                type: "text",
+                                className: "w-full text-right p-1 border border-gray-300 rounded-md text-sm",
+                                value: senderTel,
+                                onChange: (e) => setSenderTel(e.target.value)
+                            }),
+                            React.createElement("input", {
+                                type: "text",
+                                className: "w-full text-right p-1 border border-gray-300 rounded-md text-sm",
+                                value: senderRepresentative,
+                                onChange: (e) => setSenderRepresentative(e.target.value)
+                            })
+                        )
+                    )
+                ),
 
-                    <p className="mb-6 text-center text-gray-700 text-lg">下記のとおり、御見積もり申し上げます。</p>
+                React.createElement(
+                    "p",
+                    { className: "mb-6 text-center text-gray-700 text-lg" },
+                    "下記のとおり、御見積もり申し上げます。"
+                ),
 
-                    {/* Key Details Section */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                        <div className="flex flex-col">
-                            <label className="text-sm font-semibold text-blue-700 mb-1">件名:</label>
-                            <input
-                                type="text"
-                                className="p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                value={subject}
-                                onChange={(e) => setSubject(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex flex-col">
-                            <label className="text-sm font-semibold text-blue-700 mb-1">納期:</label>
-                            <input
-                                type="date"
-                                className="p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                value={deliveryDate}
-                                onChange={(e) => setDeliveryDate(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex flex-col">
-                            <label className="text-sm font-semibold text-blue-700 mb-1">支払条件:</label>
-                            <input
-                                type="text"
-                                className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                value={paymentTerms}
-                                onChange={(e) => setPaymentTerms(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex flex-col lg:col-span-1"> {/* Adjusted to span 1 column on large screens */}
-                            <label className="text-sm font-semibold text-blue-700 mb-1">有効期限:</label>
-                            <input
-                                type="text"
-                                className="p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                value={validityPeriod}
-                                onChange={(e) => setValidityPeriod(e.target.value)}
-                            />
-                        </div>
-                    </div>
+                /* Key Details Section */
+                React.createElement(
+                    "div",
+                    { className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200" },
+                    React.createElement(
+                        "div",
+                        { className: "flex flex-col" },
+                        React.createElement(
+                            "label",
+                            { className: "text-sm font-semibold text-blue-700 mb-1" },
+                            "件名:"
+                        ),
+                        React.createElement("input", {
+                            type: "text",
+                            className: "p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
+                            value: subject,
+                            onChange: (e) => setSubject(e.target.value)
+                        })
+                    ),
+                    React.createElement(
+                        "div",
+                        { className: "flex flex-col" },
+                        React.createElement(
+                            "label",
+                            { className: "text-sm font-semibold text-blue-700 mb-1" },
+                            "納期:"
+                        ),
+                        React.createElement("input", {
+                            type: "date",
+                            className: "p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
+                            value: deliveryDate,
+                            onChange: (e) => setDeliveryDate(e.target.value)
+                        })
+                    ),
+                    React.createElement(
+                        "div",
+                        { className: "flex flex-col" },
+                        React.createElement(
+                            "label",
+                            { className: "text-sm font-semibold text-blue-700 mb-1" },
+                            "支払条件:"
+                        ),
+                        React.createElement("input", {
+                            type: "text",
+                            className: "p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
+                            value: paymentTerms,
+                            onChange: (e) => setPaymentTerms(e.target.value)
+                        })
+                    ),
+                    React.createElement(
+                        "div",
+                        { className: "flex flex-col lg:col-span-1" },
+                        React.createElement(
+                            "label",
+                            { className: "text-sm font-semibold text-blue-700 mb-1" },
+                            "有効期限:"
+                        ),
+                        React.createElement("input", {
+                            type: "text",
+                            className: "p-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
+                            value: validityPeriod,
+                            onChange: (e) => setValidityPeriod(e.target.value)
+                        })
+                    )
+                ),
 
-                    {/* Total Amount Display */}
-                    <div className="flex justify-end items-baseline mb-8">
-                        <span className="text-xl sm:text-2xl font-bold mr-4 text-gray-700">合計</span>
-                        <span className="text-3xl sm:text-4xl font-extrabold text-blue-600">
-                            {formatNumber(total)} 円 (税込)
-                        </span>
-                    </div>
+                React.createElement(
+                    "div",
+                    { className: "flex justify-end items-baseline mb-8" },
+                    React.createElement(
+                        "span",
+                        { className: "text-xl sm:text-2xl font-bold mr-4 text-gray-700" },
+                        "合計"
+                    ),
+                    React.createElement(
+                        "span",
+                        { className: "text-3xl sm:text-4xl font-extrabold text-blue-600" },
+                        formatNumber(total),
+                        " 円 (税込)"
+                    )
+                ),
 
-                    {/* Items Table */}
-                    <div className="overflow-x-auto mb-8 shadow-md rounded-lg border border-gray-200">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-blue-50">
-                                <tr>
-                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12"></th> {/* Delete button column */}
-                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-4/12">摘要</th>
-                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">数量</th>
-                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">単位</th>
-                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12">単価</th>
-                                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12">金額</th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {items.map(item => (
-                                    <tr key={item.id}>
-                                        <td className="px-3 py-3 whitespace-nowrap">
-                                            <button
-                                                onClick={() => deleteItem(item.id)}
-                                                className="p-1 rounded-full bg-red-500 text-white hover:bg-red-600 transition duration-200"
-                                                title="項目を削除"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </button>
-                                        </td>
-                                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
-                                            {/* 商品名プルダウン */}
-                                            <select
-                                                className="w-full p-1 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                                value={item.description}
-                                                onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
-                                                disabled={productData.length === 0}
-                                            >
-                                                <option value="">選択してください</option>
-                                                {productData.map(product => (
-                                                    <option key={product.id} value={product.name}>{product.name}</option>
-                                                ))}
-                                            </select>
-                                        </td>
-                                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
-                                            <input
-                                                type="number"
-                                                className="w-full p-1 border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500"
-                                                value={item.quantity}
-                                                onChange={(e) => handleItemChange(item.id, 'quantity', e.target.value)}
-                                                min="0"
-                                            />
-                                        </td>
-                                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
-                                            <input
-                                                type="text"
-                                                className="w-full p-1 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
-                                                value={item.unit}
-                                                onChange={(e) => handleItemChange(item.id, 'unit', e.target.value)}
-                                                readOnly={true} // Set to readOnly
-                                            />
-                                        </td>
-                                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
-                                            <input
-                                                type="number"
-                                                className="w-full p-1 border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
-                                                value={item.unitPrice}
-                                                onChange={(e) => handleItemChange(item.id, 'unitPrice', e.target.value)}
-                                                min="0"
-                                                readOnly={true} // Set to readOnly
-                                            />
-                                        </td>
-                                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 text-right font-medium bg-gray-50">
-                                            {formatNumber(item.amount)}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                /* Items Table */
+                React.createElement(
+                    "div",
+                    { className: "overflow-x-auto mb-8 shadow-md rounded-lg border border-gray-200" },
+                    React.createElement(
+                        "table",
+                        { className: "min-w-full divide-y divide-gray-200" },
+                        React.createElement(
+                            "thead",
+                            { className: "bg-blue-50" },
+                            React.createElement(
+                                "tr",
+                                null,
+                                React.createElement("th", { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12" }),
+                                React.createElement(
+                                    "th",
+                                    { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-4/12" },
+                                    "摘要"
+                                ),
+                                React.createElement(
+                                    "th",
+                                    { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12" },
+                                    "数量"
+                                ),
+                                React.createElement(
+                                    "th",
+                                    { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12" },
+                                    "単位"
+                                ),
+                                React.createElement(
+                                    "th",
+                                    { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12" },
+                                    "単価"
+                                ),
+                                React.createElement(
+                                    "th",
+                                    { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12" },
+                                    "金額"
+                                )
+                            )
+                        ),
+                        React.createElement(
+                            "tbody",
+                            { className: "bg-white divide-y divide-gray-200" },
+                            items.map(item => React.createElement(
+                                "tr",
+                                { key: item.id },
+                                React.createElement(
+                                    "td",
+                                    { className: "px-3 py-3 whitespace-nowrap" },
+                                    React.createElement(
+                                        "button",
+                                        {
+                                            onClick: () => deleteItem(item.id),
+                                            className: "p-1 rounded-full bg-red-500 text-white hover:bg-red-600 transition duration-200",
+                                            title: "項目を削除"
+                                        },
+                                        React.createElement(
+                                            "svg",
+                                            { xmlns: "http://www.w3.org/2000/svg", className: "h-4 w-4", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" },
+                                            React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "2", d: "M6 18L18 6M6 6l12 12" })
+                                        )
+                                    )
+                                ),
+                                React.createElement(
+                                    "td",
+                                    { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-900" },
+                                    /* 商品名入力（datalistでサジェスト） */
+                                    React.createElement("input", {
+                                        type: "text",
+                                        list: "product-names-datalist", // datalistと連携
+                                        className: "w-full p-1 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
+                                        value: item.description,
+                                        onChange: (e) => handleItemChange(item.id, 'description', e.target.value)
+                                    }),
+                                    React.createElement(
+                                        "datalist",
+                                        { id: "product-names-datalist" },
+                                        productData.map(product => React.createElement(
+                                            "option",
+                                            { key: product.id, value: product.name }
+                                        ))
+                                    )
+                                ),
+                                React.createElement("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-900" }, React.createElement("input", {
+                                    type: "number",
+                                    className: "w-full p-1 border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500",
+                                    value: item.quantity,
+                                    onChange: (e) => handleItemChange(item.id, 'quantity', e.target.value),
+                                    min: "0"
+                                })),
+                                React.createElement("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-900" }, React.createElement("input", {
+                                    type: "text", // 読み取り専用を解除
+                                    className: "w-full p-1 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
+                                    value: item.unit,
+                                    onChange: (e) => handleItemChange(item.id, 'unit', e.target.value)
+                                })),
+                                React.createElement("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-900" }, React.createElement("input", {
+                                    type: "number", // 読み取り専用を解除
+                                    className: "w-full p-1 border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500",
+                                    value: item.unitPrice,
+                                    onChange: (e) => handleItemChange(item.id, 'unitPrice', e.target.value),
+                                    min: "0"
+                                })),
+                                React.createElement(
+                                    "td",
+                                    { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-900 text-right font-medium bg-gray-50" },
+                                    formatNumber(item.amount)
+                                )
+                            ))
+                        ),
+                        /* 小計・消費税・合計 */
+                        React.createElement(
+                            "tr",
+                            null,
+                            React.createElement("td", { colSpan: "3", className: "border: 1px solid #000; padding: 8px; text-align: left;" }),
+                            React.createElement(
+                                "td",
+                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
+                                "小計"
+                            ),
+                            React.createElement(
+                                "td",
+                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
+                                formatNumber(subtotal)
+                            )
+                        ),
+                        React.createElement(
+                            "tr",
+                            null,
+                            React.createElement("td", { colSpan: "3", className: "border: 1px solid #000; padding: 8px; text-align: left;" }),
+                            React.createElement(
+                                "td",
+                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
+                                `消費税 (${TAX_RATE * 100}%)`
+                            ),
+                            React.createElement(
+                                "td",
+                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
+                                formatNumber(tax)
+                            )
+                        ),
+                        React.createElement(
+                            "tr",
+                            null,
+                            React.createElement("td", { colSpan: "3", className: "border: 1px solid #000; padding: 8px; text-align: left;" }),
+                            React.createElement(
+                                "td",
+                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
+                                "合計"
+                            ),
+                            React.createElement(
+                                "td",
+                                { className: "border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold; font-size: 12px;" },
+                                formatNumber(total)
+                            )
+                        )
+                    )
+                ),
 
-                    <div className="flex justify-between items-center mb-8">
-                        <button
-                            onClick={addItem}
-                            className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition duration-300 transform hover:scale-105"
-                        >
-                            項目を追加
-                        </button>
-                        <div className="flex space-x-2"> {/* ボタンを横並びにするためのコンテナ */}
-                            <button
-                                onClick={handleGeneratePdf}
-                                className="px-6 py-2 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition duration-300 transform hover:scale-105"
-                            >
-                                PDF出力
-                            </button>
-                        </div>
-                    </div>
+                React.createElement(
+                    "div",
+                    { className: "flex justify-between items-center mb-8" },
+                    React.createElement(
+                        "button",
+                        {
+                            onClick: addItem,
+                            className: "px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition duration-300 transform hover:scale-105"
+                        },
+                        "項目を追加"
+                    ),
+                    React.createElement(
+                        "div",
+                        { className: "flex space-x-2" },
+                        React.createElement(
+                            "button",
+                            {
+                                onClick: handleGeneratePdf,
+                                className: "px-6 py-2 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition duration-300 transform hover:scale-105"
+                            },
+                            "PDF出力"
+                        )
+                    )
+                ),
 
 
-                    {/* Totals Section */}
-                    <div className="flex justify-end mb-8">
-                        <div className="w-full max-w-sm">
-                            <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                                <span className="text-md sm:text-lg text-gray-700">小計:</span>
-                                <span className="text-md sm:text-lg font-semibold text-gray-800">{formatNumber(subtotal)} 円</span>
-                            </div>
-                            <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                                <span className="text-md sm:text-lg text-gray-700">消費税 ({TAX_RATE * 100}%):</span>
-                                <span className="text-md sm:text-lg font-semibold text-gray-800">{formatNumber(tax)} 円</span>
-                            </div>
-                            <div className="flex justify-between items-center py-3 font-bold text-lg sm:text-xl border-t-2 border-blue-300 mt-2">
-                                <span>合計:</span>
-                                <span>{formatNumber(total)} 円</span>
-                            </div>
-                        </div>
-                    </div>
+                /* Totals Section */
+                React.createElement(
+                    "div",
+                    { className: "flex justify-end mb-8" },
+                    React.createElement(
+                        "div",
+                        { className: "w-full max-w-sm" },
+                        React.createElement(
+                            "div",
+                            { className: "flex justify-between items-center py-2 border-b border-gray-200" },
+                            React.createElement(
+                                "span",
+                                { className: "text-md sm:text-lg text-gray-700" },
+                                "小計:"
+                            ),
+                            React.createElement(
+                                "span",
+                                { className: "text-md sm:text-lg font-semibold text-gray-800" },
+                                formatNumber(subtotal),
+                                " 円"
+                            )
+                        ),
+                        React.createElement(
+                            "div",
+                            { className: "flex justify-between items-center py-2 border-b border-gray-200" },
+                            React.createElement(
+                                "span",
+                                { className: "text-md sm:text-lg text-gray-700" },
+                                `消費税 (${TAX_RATE * 100}%)`
+                            ),
+                            React.createElement(
+                                "span",
+                                { className: "text-md sm:text-lg font-semibold text-gray-800" },
+                                formatNumber(tax),
+                                " 円"
+                            )
+                        ),
+                        React.createElement(
+                            "div",
+                            { className: "flex justify-between items-center py-3 font-bold text-lg sm:text-xl border-t-2 border-blue-300 mt-2" },
+                            React.createElement(
+                                "span",
+                                null,
+                                "合計:"
+                            ),
+                            React.createElement(
+                                "span",
+                                null,
+                                formatNumber(total),
+                                " 円"
+                            )
+                        )
+                    )
+                ),
 
-                    {/* Remarks Section */}
-                    <div className="mb-8">
-                        <label htmlFor="remarks" className="block text-md font-semibold text-gray-700 mb-2">備考:</label>
-                        <textarea
-                            id="remarks"
-                            className="w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 resize-y"
-                            rows="4"
-                            value={remarks}
-                            onChange={(e) => setRemarks(e.target.value)}
-                            placeholder="ご不明な点がございましたら、お気軽にお問い合わせください。"
-                        ></textarea>
-                    </div>
+                /* Remarks Section */
+                React.createElement(
+                    "div",
+                    { className: "mb-8" },
+                    React.createElement(
+                        "label",
+                        { htmlFor: "remarks", className: "block text-md font-semibold text-gray-700 mb-2" },
+                        "備考:"
+                    ),
+                    React.createElement("textarea", {
+                        id: "remarks",
+                        className: "w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 resize-y",
+                        rows: "4",
+                        value: remarks,
+                        onChange: (e) => setRemarks(e.target.value),
+                        placeholder: "ご不明な点がございましたら、お気軽にお問い合わせください。"
+                    })
+                ),
 
-                    <p className="text-center text-gray-500 text-sm mt-8">本見積書の有効期限は、御見積後2週間です。</p>
-
-                </div>
+                React.createElement(
+                    "p",
+                    { className: "text-center text-gray-500 text-sm mt-8" },
+                    "本見積書の有効期限は、御見積後2週間です。"
+                )
             );
         };
 
         // 商品管理ページコンポーネント
-        const ProductManagementPage = ({ productData, addProduct, updateProduct, deleteProduct, showMessageModal }) => {
+        const ProductManagementPage = ({ productData, addProduct, updateProduct, deleteProduct, showMessageModal, showConfirmModal }) => {
             const [editingProduct, setEditingProduct] = useState(null); // 編集中商品のID
             const [newProductName, setNewProductName] = useState('');
             const [newProductUnit, setNewProductUnit] = useState('');
@@ -604,7 +876,7 @@
             };
 
             // 商品追加・更新ボタンクリック時の処理
-            const handleSubmit = (e) => {
+            const handleSubmit = async (e) => {
                 e.preventDefault();
                 if (!newProductName || !newProductUnit || newProductPrice === '') {
                     showMessageModal('商品名、単位、単価は必須です。'); // カスタムモーダルを使用
@@ -616,254 +888,530 @@
                     return;
                 }
 
-                if (editingProduct) {
-                    // 更新処理
-                    updateProduct({ id: editingProduct, name: newProductName, unit: newProductUnit, price: price });
-                } else {
-                    // 追加処理
-                    addProduct({ name: newProductName, unit: newProductUnit, price: price });
+                try {
+                    if (editingProduct) {
+                        // 更新処理
+                        await updateProduct({ id: editingProduct, name: newProductName, unit: newProductUnit, price: price });
+                    } else {
+                        // 追加処理
+                        await addProduct({ name: newProductName, unit: newProductUnit, price: price });
+                    }
+                    resetForm();
+                } catch (error) {
+                    console.error("商品操作エラー:", error);
+                    showMessageModal(`商品操作中にエラーが発生しました: ${error.message}`);
                 }
-                resetForm();
             };
 
-            return (
-                <div className="bg-white p-6 sm:p-10 rounded-xl shadow-2xl w-full border border-gray-200">
-                    <h1 className="text-3xl sm:text-4xl font-bold text-center text-gray-800 mb-8 pb-4 border-b-2 border-blue-200">商品管理</h1>
+            return React.createElement(
+                "div",
+                { className: "bg-white p-6 sm:p-10 rounded-xl shadow-2xl w-full border border-gray-200" },
+                React.createElement(
+                    "h1",
+                    { className: "text-3xl sm:text-4xl font-bold text-center text-gray-800 mb-8 pb-4 border-b-2 border-blue-200" },
+                    "商品管理"
+                ),
 
-                    {/* 商品追加・編集フォーム */}
-                    <form onSubmit={handleSubmit} className="mb-8 p-4 border border-blue-200 rounded-lg bg-blue-50">
-                        <h2 className="text-2xl font-semibold text-blue-700 mb-4">{editingProduct ? '商品を修正' : '新しい商品を追加'}</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                            <div className="flex flex-col">
-                                <label htmlFor="productName" className="text-sm font-semibold text-gray-700 mb-1">商品名:</label>
-                                <input
-                                    type="text"
-                                    id="productName"
-                                    className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    value={newProductName}
-                                    onChange={(e) => setNewProductName(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="flex flex-col">
-                                <label htmlFor="productUnit" className="text-sm font-semibold text-gray-700 mb-1">単位:</label>
-                                <input
-                                    type="text"
-                                    id="productUnit"
-                                    className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                    value={newProductUnit}
-                                    onChange={(e) => setNewProductUnit(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="flex flex-col">
-                                <label htmlFor="productPrice" className="text-sm font-semibold text-gray-700 mb-1">単価:</label>
-                                <input
-                                    type="number"
-                                    id="productPrice"
-                                    className="p-2 border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500"
-                                    value={newProductPrice}
-                                    onChange={(e) => setNewProductPrice(e.target.value)}
-                                    min="0"
-                                    required
-                                />
-                            </div>
-                        </div>
-                        <div className="flex justify-end space-x-2">
-                            {editingProduct && (
-                                <button
-                                    type="button"
-                                    onClick={resetForm}
-                                    className="px-4 py-2 bg-gray-500 text-white font-bold rounded-lg shadow-md hover:bg-gray-600 transition duration-300"
-                                >
-                                    キャンセル
-                                </button>
-                            )}
-                            <button
-                                type="submit"
-                                className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition duration-300 transform hover:scale-105"
-                            >
-                                {editingProduct ? '更新' : '追加'}
-                            </button>
-                        </div>
-                    </form>
+                /* 商品追加・編集フォーム */
+                React.createElement(
+                    "form",
+                    { onSubmit: handleSubmit, className: "mb-8 p-4 border border-blue-200 rounded-lg bg-blue-50" },
+                    React.createElement(
+                        "h2",
+                        { className: "text-2xl font-semibold text-blue-700 mb-4" },
+                        editingProduct ? '商品を修正' : '新しい商品を追加'
+                    ),
+                    React.createElement(
+                        "div",
+                        { className: "grid grid-cols-1 md:grid-cols-3 gap-4 mb-4" },
+                        React.createElement(
+                            "div",
+                            { className: "flex flex-col" },
+                            React.createElement(
+                                "label",
+                                { htmlFor: "productName", className: "text-sm font-semibold text-gray-700 mb-1" },
+                                "商品名:"
+                            ),
+                            React.createElement("input", {
+                                type: "text",
+                                id: "productName",
+                                className: "p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
+                                value: newProductName,
+                                onChange: (e) => setNewProductName(e.target.value),
+                                required: true
+                            })
+                        ),
+                        React.createElement(
+                            "div",
+                            { className: "flex flex-col" },
+                            React.createElement(
+                                "label",
+                                { htmlFor: "productUnit", className: "text-sm font-semibold text-gray-700 mb-1" },
+                                "単位:"
+                            ),
+                            React.createElement("input", {
+                                type: "text",
+                                id: "productUnit",
+                                className: "p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500",
+                                value: newProductUnit,
+                                onChange: (e) => setNewProductUnit(e.target.value),
+                                required: true
+                            })
+                        ),
+                        React.createElement(
+                            "div",
+                            { className: "flex flex-col" },
+                            React.createElement(
+                                "label",
+                                { htmlFor: "productPrice", className: "text-sm font-semibold text-gray-700 mb-1" },
+                                "単価:"
+                            ),
+                            React.createElement("input", {
+                                type: "number",
+                                id: "productPrice",
+                                className: "p-2 border border-gray-300 rounded-md text-right focus:ring-blue-500 focus:border-blue-500",
+                                value: newProductPrice,
+                                onChange: (e) => setNewProductPrice(e.target.value),
+                                min: "0",
+                                required: true
+                            })
+                        )
+                    ),
+                    React.createElement(
+                        "div",
+                        { className: "flex justify-end space-x-2" },
+                        editingProduct && React.createElement(
+                            "button",
+                            {
+                                type: "button",
+                                onClick: resetForm,
+                                className: "px-4 py-2 bg-gray-500 text-white font-bold rounded-lg shadow-md hover:bg-gray-600 transition duration-300"
+                            },
+                            "キャンセル"
+                        ),
+                        React.createElement(
+                            "button",
+                            {
+                                type: "submit",
+                                className: "px-4 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition duration-300 transform hover:scale-105"
+                            },
+                            editingProduct ? '更新' : '追加'
+                        )
+                    )
+                ),
 
-                    {/* 商品一覧テーブル */}
-                    <h2 className="text-2xl font-semibold text-gray-800 mb-4">登録商品一覧</h2>
-                    {productData.length === 0 ? (
-                        <p className="text-center text-gray-600 italic py-4">登録されている商品がありません。</p>
-                    ) : (
-                        <div className="overflow-x-auto shadow-md rounded-lg border border-gray-200">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-blue-50">
-                                    <tr>
-                                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">商品名</th>
-                                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">単位</th>
-                                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">単価</th>
-                                        <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {productData.map(product => (
-                                        <tr key={product.id}>
-                                            <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">{product.name}</td>
-                                            <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">{product.unit}</td>
-                                            <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{product.price.toLocaleString('ja-JP')}</td>
-                                            <td className="px-3 py-3 whitespace-nowrap text-center text-sm">
-                                                <button
-                                                    onClick={() => handleEditClick(product)}
-                                                    className="inline-flex items-center px-3 py-1 bg-yellow-500 text-white text-xs font-bold rounded-md shadow-sm hover:bg-yellow-600 transition duration-200 mr-2"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-7-6l-2-2m2 2l5 5m-5-2l2 2m-2-2l-2-2M15 4l2 2m-2-2l-2 2" />
-                                                    </svg>
-                                                    編集
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        // confirmをカスタムモーダルに置き換え
-                                                        if (confirm('この商品を削除しますか？')) { // confirmは一時的に残す
-                                                            deleteProduct(product.id);
-                                                        }
-                                                    }}
-                                                    className="inline-flex items-center px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-md shadow-sm hover:bg-red-600 transition duration-200"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                    </svg>
-                                                    削除
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
+                /* 商品一覧テーブル */
+                React.createElement(
+                    "h2",
+                    { className: "text-2xl font-semibold text-gray-800 mb-4" },
+                    "登録商品一覧"
+                ),
+                productData.length === 0 ? React.createElement(
+                    "p",
+                    { className: "text-center text-gray-600 italic py-4" },
+                    "登録されている商品がありません。"
+                ) : React.createElement(
+                    "div",
+                    { className: "overflow-x-auto shadow-md rounded-lg border border-gray-200" },
+                    React.createElement(
+                        "table",
+                        { className: "min-w-full divide-y divide-gray-200" },
+                        React.createElement(
+                            "thead",
+                            { className: "bg-blue-50" },
+                            React.createElement(
+                                "tr",
+                                null,
+                                React.createElement(
+                                    "th",
+                                    { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" },
+                                    "商品名"
+                                ),
+                                React.createElement(
+                                    "th",
+                                    { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" },
+                                    "単位"
+                                ),
+                                React.createElement(
+                                    "th",
+                                    { className: "px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider" },
+                                    "単価"
+                                ),
+                                React.createElement(
+                                    "th",
+                                    { className: "px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider" },
+                                    "操作"
+                                )
+                            )
+                        ),
+                        React.createElement(
+                            "tbody",
+                            { className: "bg-white divide-y divide-gray-200" },
+                            productData.map(product => React.createElement(
+                                "tr",
+                                { key: product.id },
+                                React.createElement(
+                                    "td",
+                                    { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-900" },
+                                    product.name
+                                ),
+                                React.createElement(
+                                    "td",
+                                    { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-900" },
+                                    product.unit
+                                ),
+                                React.createElement(
+                                    "td",
+                                    { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-900 text-right" },
+                                    product.price.toLocaleString('ja-JP')
+                                ),
+                                React.createElement(
+                                    "td",
+                                    { className: "px-3 py-3 whitespace-nowrap text-center text-sm" },
+                                    React.createElement(
+                                        "button",
+                                        {
+                                            onClick: () => handleEditClick(product),
+                                            className: "inline-flex items-center px-3 py-1 bg-yellow-500 text-white text-xs font-bold rounded-md shadow-sm hover:bg-yellow-600 transition duration-200 mr-2"
+                                        },
+                                        React.createElement(
+                                            "svg",
+                                            { xmlns: "http://www.w3.org/2000/svg", className: "h-4 w-4 mr-1", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" },
+                                            React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "2", d: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-7-6l-2-2m2 2l5 5m-5-2l2 2m-2-2l-2-2M15 4l2 2m-2-2l-2 2" })
+                                        ),
+                                        "編集"
+                                    ),
+                                    React.createElement(
+                                        "button",
+                                        {
+                                            onClick: () => showConfirmModal('この商品を削除しますか？', () => deleteProduct(product.id)),
+                                            className: "inline-flex items-center px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-md shadow-sm hover:bg-red-600 transition duration-200"
+                                        },
+                                        React.createElement(
+                                            "svg",
+                                            { xmlns: "http://www.w3.org/2000/svg", className: "h-4 w-4 mr-1", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" },
+                                            React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "2", d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" })
+                                        ),
+                                        "削除"
+                                    )
+                                )
+                            ))
+                        )
+                    )
+                )
             );
         };
 
 
         const App = () => {
-            // グローバルなメッセージモーダルステートをAppコンポーネント内に移動
+            // グローバルなメッセージモーダルステート
             const [globalShowMessageModal, setGlobalShowMessageModal] = useState(false);
             const [globalModalContent, setGlobalModalContent] = useState('');
+            const [globalShowConfirmButton, setGlobalShowConfirmButton] = useState(false);
+            const [globalConfirmAction, setGlobalConfirmAction] = useState(null);
 
-            // showMessageModal関数もAppコンポーネント内に移動
+            // 認証関連のステート
+            const [isFirebaseReady, setIsFirebaseReady] = useState(false);
+            const [userId, setUserId] = useState(null);
+            const [isLoading, setIsLoading] = useState(true); // ロード中表示用
+
+            // 商品データとページ管理
+            const [productData, setProductData] = useState([]);
+            const [currentPage, setCurrentPage] = useState('quotation'); // 'quotation' or 'management'
+
+            // メッセージモーダル表示関数
             const showMessageModal = (content) => {
                 setGlobalModalContent(content);
+                setGlobalShowConfirmButton(false);
+                setGlobalConfirmAction(null);
                 setGlobalShowMessageModal(true);
             };
 
-            // ローカルストレージから商品データをロード、なければデフォルトデータを使用
-            const loadProductDataFromLocalStorage = () => {
-                try {
-                    const savedData = localStorage.getItem('productData');
-                    if (savedData) {
-                        const parsedData = JSON.parse(savedData);
-                        // Ensure each product has an 'id' for keying in React
-                        return parsedData.map(p => ({ ...p, id: p.id || Date.now() + Math.random() }));
-                    }
-                } catch (error) {
-                    console.error("Failed to load product data from localStorage:", error);
-                    showMessageModal("商品データの読み込みに失敗しました。");
-                }
-                // ローカルストレージにデータがない場合、または読み込みに失敗した場合のデフォルトデータ
-                const defaultProducts = [
-                    { name: 'サンプル15', unit: '個', price: 15000 },
-                    { name: 'サンプル16', unit: '式', price: 16000 },
-                    { name: 'サンプル17', unit: '枚', price: 17000 },
-                    { name: 'サンプル18', unit: '回', price: 18000 },
-                    { name: 'サンプル19', unit: 'セット', price: 19000 },
-                    { name: 'サンプル20', unit: '本', price: 20000 },
-                    { name: 'サンプル21', unit: '式', price: 21000 },
-                    { name: 'サンプル22', unit: '個', price: 22000 },
-                    { name: 'サンプル23', unit: '枚', price: 23000 },
-                    { name: 'サンプル24', unit: '式', price: 24000 },
-                    { name: 'サンプル25', unit: '本', price: 25000 },
-                ];
-                // デフォルトデータにもユニークなIDを付与
-                return defaultProducts.map((p, index) => ({ ...p, id: Date.now() + index + Math.random() })); // 念のためDate.now() + index + random
+            // 確認モーダル表示関数
+            const showConfirmModal = (content, confirmAction) => {
+                setGlobalModalContent(content);
+                setGlobalShowConfirmButton(true);
+                setGlobalConfirmAction(() => confirmAction); // 関数を直接保存
+                setGlobalShowMessageModal(true);
             };
 
-            const [productData, setProductData] = useState(loadProductDataFromLocalStorage());
-            const [currentPage, setCurrentPage] = useState('quotation'); // 'quotation' or 'management'
+            const closeGlobalModal = () => {
+                setGlobalShowMessageModal(false);
+                setGlobalModalContent('');
+                setGlobalShowConfirmButton(false);
+                setGlobalConfirmAction(null);
+            };
 
-            // productDataが変更されるたびにLocal Storageに保存
+            const handleGlobalConfirm = () => {
+                if (globalConfirmAction) {
+                    globalConfirmAction();
+                }
+                closeGlobalModal();
+            };
+
+            // Firebase初期化と認証
             useEffect(() => {
-                try {
-                    localStorage.setItem('productData', JSON.stringify(productData));
-                } catch (error) {
-                    console.error("Failed to save product data to localStorage:", error);
-                    showMessageModal("商品データの保存に失敗しました。");
+                console.log("App useEffect: Setting up firebase-ready listener.");
+                const handleFirebaseReady = async (event) => {
+                    console.log("firebase-ready event received. Success:", event.detail.success);
+                    if (!event.detail.success) {
+                        console.warn("Firebase initialization failed in main script. Using fallback product data.");
+                        showMessageModal(`Firebaseの初期化に失敗しました: ${event.detail.error || '不明なエラー'}\n代替商品データを使用します。`);
+                        setProductData(FALLBACK_PRODUCT_DATA);
+                        setIsFirebaseReady(false);
+                        setIsLoading(false); // エラー時もローディングを解除
+                        console.log("isLoading set to false after Firebase init failure.");
+                        return;
+                    }
+
+                    if (window.db && window.auth) {
+                        try {
+                            console.log("Firebase SDK is available. Attempting to sign in.");
+                            // initialAuthTokenがあればそれを使用、なければ匿名認証
+                            if (window.initialAuthToken) {
+                                console.log("Signing in with custom token...");
+                                await window.signInWithCustomToken(window.auth, window.initialAuthToken);
+                            } else {
+                                console.log("Signing in anonymously...");
+                                await window.signInAnonymously(window.auth);
+                            }
+                            // 認証状態の変更を監視
+                            const unsubscribeAuth = window.onAuthStateChanged(window.auth, (user) => {
+                                if (user) {
+                                    console.log("User authenticated:", user.uid);
+                                    setUserId(user.uid);
+                                    setIsFirebaseReady(true); // 認証が完了したらFirebase準備完了
+                                    // Note: isLoading is intentionally NOT set to false here.
+                                    // It will be set to false once product data is fetched.
+                                } else {
+                                    console.log("No user signed in.");
+                                    setUserId(null); 
+                                    setIsFirebaseReady(false); 
+                                    setIsLoading(false); // 認証失敗/未認証の場合もローディングを解除
+                                    showMessageModal('認証されていません。一部機能が制限される場合があります。\n代替商品データを使用します。');
+                                    setProductData(FALLBACK_PRODUCT_DATA); // 認証失敗時も代替商品をロード
+                                    console.log("isLoading set to false after Auth failure.");
+                                }
+                            });
+                            // クリーンアップ関数で購読解除
+                            return () => unsubscribeAuth();
+                        } catch (error) {
+                            console.error("Firebase Auth Error:", error);
+                            showMessageModal(`認証エラー: ${error.message}\n代替商品データを使用します。`);
+                            setIsLoading(false); // エラー時もローディングを解除
+                            setProductData(FALLBACK_PRODUCT_DATA); // 認証エラー時も代替商品をロード
+                            console.log("isLoading set to false after Auth catch error.");
+                        }
+                    } else {
+                        // これはfirebase-readyイベントで処理されるはずなので、このパスは基本的には通らない
+                        // もしここに来たら、Firebase SDKの読み込み自体が失敗している可能性
+                        console.error("Firebase SDK (db or auth) not found in window object after firebase-ready event.");
+                        showMessageModal("Firebase SDKの読み込みに失敗しました。\n代替商品データを使用します。");
+                        setProductData(FALLBACK_PRODUCT_DATA);
+                        setIsLoading(false);
+                        console.log("isLoading set to false after Firebase SDK not found.");
+                    }
+                };
+
+                // 'firebase-ready'イベントをリッスン
+                document.addEventListener('firebase-ready', handleFirebaseReady);
+
+                // コンポーネントアンマウント時にイベントリスナーをクリーンアップ
+                return () => {
+                    console.log("App useEffect: Cleaning up firebase-ready listener.");
+                    document.removeEventListener('firebase-ready', handleFirebaseReady);
+                };
+            }, []); // 空の依存配列で初回のみ実行
+
+            // Firestoreから商品データをリアルタイムで取得
+            useEffect(() => {
+                console.log("Product Data useEffect: isFirebaseReady:", isFirebaseReady, "userId:", userId, "isLoading:", isLoading);
+                // Firebaseが準備できていない、またはuserIdがまだ設定されていない場合は何もしない
+                // ただし、isFirebaseReadyがfalseの場合はFALLBACK_PRODUCT_DATAが既にセットされているはず
+                if (!isFirebaseReady || !userId) {
+                    console.log("Firestore data fetch skipped: isFirebaseReady or userId not set. Current isLoading:", isLoading);
+                    // isFirebaseReadyがfalseかつisLoadingがtrueの場合（初期ロード中）は、まだローディングを続ける
+                    // そうでない場合（isFirebaseReadyがfalseだがLoadingが解除されている場合、例えば認証エラー後）は、FALLBACK_PRODUCT_DATAが使われるべき
+                    if (!isFirebaseReady && isLoading) { // Only force fallback if Firebase not ready AND still loading
+                         console.log("Forcing isLoading to false and using fallback as Firebase is not ready.");
+                         setProductData(FALLBACK_PRODUCT_DATA); // 認証失敗/エラーでLoading解除済みの場合、念のためここで代替設定
+                         setIsLoading(false);
+                    }
+                    return;
                 }
-            }, [productData]);
 
-            // 商品を追加する関数
-            const addProduct = (newProduct) => {
-                // 新しいIDを生成。既存のIDの最大値 + 1 を使用し、重複しないようにする
-                const newId = productData.length > 0 ? Math.max(...productData.map(p => p.id)) + 1 : 1;
-                setProductData(prevData => [...prevData, { ...newProduct, id: newId }]);
-                showMessageModal('商品が追加されました。'); // 追加成功メッセージ
+                console.log("Attempting to fetch Firestore products for userId:", userId, "appId:", window.appId);
+                // public/data下に商品を保存することで、複数ユーザーで商品を共有できるようにする
+                const productsColRef = window.collection(window.db, `artifacts/${window.appId}/public/data/products`);
+                
+                // リアルタイムリスナーを設定
+                const unsubscribeFirestore = window.onSnapshot(productsColRef, (snapshot) => {
+                    console.log("Firestore snapshot received.");
+                    const products = [];
+                    snapshot.forEach(doc => {
+                        products.push({ id: doc.id, ...doc.data() });
+                    });
+                    // FirestoreデータはIDでソートされないので、ここでソートする（例: nameでソート）
+                    products.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+                    setProductData(products);
+                    setIsLoading(false); // データ取得が完了したらローディングを解除
+                    console.log("isLoading set to false after successful product data load.");
+                }, (error) => {
+                    console.error("Firestore Error fetching products:", error);
+                    showMessageModal(`商品データの取得エラー: ${error.message}\n代替商品データを使用します。`);
+                    setProductData(FALLBACK_PRODUCT_DATA); // エラー時も代替商品をロード
+                    setIsLoading(false); // エラー時もローディングを解除
+                    console.log("isLoading set to false after Firestore fetch error.");
+                });
+
+                // クリーンアップ関数を返す
+                return () => {
+                    console.log("Product Data useEffect: Cleaning up Firestore listener.");
+                    unsubscribeFirestore();
+                };
+            }, [isFirebaseReady, userId]); // isFirebaseReady と userId が変わるたびに再実行
+
+            // 商品を追加する関数 (Firestoreへ)
+            const addProduct = async (newProduct) => {
+                try {
+                    if (!isFirebaseReady) {
+                        showMessageModal('データベースが準備できていません。');
+                        return;
+                    }
+                    const productsColRef = window.collection(window.db, `artifacts/${window.appId}/public/data/products`);
+                    await window.addDoc(productsColRef, newProduct);
+                    showMessageModal('商品が追加されました。');
+                } catch (error) {
+                    console.error("商品追加エラー:", error);
+                    showMessageModal(`商品追加エラー: ${error.message}`);
+                }
             };
 
-            // 商品を更新する関数
-            const updateProduct = (updatedProduct) => {
-                setProductData(prevData =>
-                    prevData.map(p => (p.id === updatedProduct.id ? updatedProduct : p))
+            // 商品を更新する関数 (Firestoreへ)
+            const updateProduct = async (updatedProduct) => {
+                try {
+                    if (!isFirebaseReady) {
+                        showMessageModal('データベースが準備できていません。');
+                        return;
+                    }
+                    const productDocRef = window.doc(window.db, `artifacts/${window.appId}/public/data/products`, updatedProduct.id);
+                    // idフィールドはドキュメントIDなので、データからは除外して更新
+                    const { id, ...dataToUpdate } = updatedProduct; 
+                    await window.updateDoc(productDocRef, dataToUpdate);
+                    showMessageModal('商品が更新されました。');
+                } catch (error) {
+                    console.error("商品更新エラー:", error);
+                    showMessageModal(`商品更新エラー: ${error.message}`);
+                }
+            };
+
+            // 商品を削除する関数 (Firestoreへ)
+            const deleteProduct = async (id) => {
+                try {
+                    if (!isFirebaseReady) {
+                        showMessageModal('データベースが準備できていません。');
+                        return;
+                    }
+                    const productDocRef = window.doc(window.db, `artifacts/${window.appId}/public/data/products`, id);
+                    await window.deleteDoc(productDocRef);
+                    showMessageModal('商品が削除されました。');
+                } catch (error) {
+                    console.error("商品削除エラー:", error);
+                    showMessageModal(`商品削除エラー: ${error.message}`);
+                }
+            };
+
+            if (isLoading) {
+                console.log("Rendering Loading... screen.");
+                return React.createElement(
+                    "div",
+                    { className: "min-h-screen p-4 sm:p-8 bg-gray-100 flex justify-center items-center" },
+                    React.createElement(
+                        "div",
+                        { className: "text-center text-lg font-bold text-gray-700" },
+                        "Loading..."
+                    )
                 );
-                showMessageModal('商品が更新されました。'); // 更新成功メッセージ
-            };
+            }
 
-            // 商品を削除する関数
-            const deleteProduct = (id) => {
-                setProductData(prevData => prevData.filter(p => p.id !== id));
-                showMessageModal('商品が削除されました。'); // 削除成功メッセージ
-            };
-
-            return (
-                <div className="min-h-screen p-4 sm:p-8 bg-gray-100 flex justify-center">
-                    <div className="w-full max-w-6xl">
-                        {/* ナビゲーション */}
-                        <nav className="mb-6 bg-white p-4 rounded-xl shadow-md flex justify-center space-x-4">
-                            <button
-                                onClick={() => setCurrentPage('quotation')}
-                                className={`px-6 py-2 rounded-lg font-bold transition duration-300 ${
+            return React.createElement(
+                "div",
+                { className: "min-h-screen p-4 sm:p-8 bg-gray-100 flex justify-center" },
+                React.createElement(
+                    "div",
+                    { className: "w-full max-w-6xl" },
+                    /* ユーザーID表示 (複数ユーザーアプリの必須要件) */
+                    userId && React.createElement(
+                        "div",
+                        { className: "bg-gray-200 text-gray-700 p-2 rounded-md text-center text-sm mb-4" },
+                        "現在のユーザーID (共有データ用): ",
+                        React.createElement(
+                            "span",
+                            { className: "font-mono break-all" },
+                            userId
+                        )
+                    ),
+                    /* ナビゲーション */
+                    React.createElement(
+                        "nav",
+                        { className: "mb-6 bg-white p-4 rounded-xl shadow-md flex justify-center space-x-4" },
+                        React.createElement(
+                            "button",
+                            {
+                                onClick: () => setCurrentPage('quotation'),
+                                className: `px-6 py-2 rounded-lg font-bold transition duration-300 ${
                                     currentPage === 'quotation' ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                }`}
-                            >
-                                見積書作成
-                            </button>
-                            <button
-                                onClick={() => setCurrentPage('management')}
-                                className={`px-6 py-2 rounded-lg font-bold transition duration-300 ${
+                                }`
+                            },
+                            "見積書作成"
+                        ),
+                        React.createElement(
+                            "button",
+                            {
+                                onClick: () => setCurrentPage('management'),
+                                className: `px-6 py-2 rounded-lg font-bold transition duration-300 ${
                                     currentPage === 'management' ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                }`}
-                            >
-                                商品管理
-                            </button>
-                        </nav>
+                                }`
+                            },
+                            "商品管理"
+                        )
+                    )
+                    ,
 
-                        {/* ページの表示 */}
-                        {currentPage === 'quotation' ? (
-                            <QuotationPage productData={productData} showMessageModal={showMessageModal} />
-                        ) : (
-                            <ProductManagementPage
-                                productData={productData}
-                                addProduct={addProduct}
-                                updateProduct={updateProduct}
-                                deleteProduct={deleteProduct}
-                                showMessageModal={showMessageModal} // showMessageModalをpropsとして渡す
-                            />
-                        )}
-                    </div>
-                    <GlobalMessageModal show={globalShowMessageModal} content={globalModalContent} onClose={() => setGlobalShowMessageModal(false)} /> {/* グローバルメッセージモーダルを配置 */}
-                </div>
+                    /* ページの表示 */
+                    currentPage === 'quotation' ? React.createElement(QuotationPage, { productData: productData, showMessageModal: showMessageModal }) : React.createElement(ProductManagementPage, {
+                        productData: productData,
+                        addProduct: addProduct,
+                        updateProduct: updateProduct,
+                        deleteProduct: deleteProduct,
+                        showMessageModal: showMessageModal,
+                        showConfirmModal: showConfirmModal
+                    })
+                ),
+                /* グローバルメッセージモーダルを配置 */
+                React.createElement(GlobalMessageModal, {
+                    show: globalShowMessageModal,
+                    content: globalModalContent,
+                    onClose: closeGlobalModal,
+                    onConfirm: handleGlobalConfirm,
+                    showConfirmButton: globalShowConfirmButton
+                })
             );
         };
 
-        ReactDOM.render(React.createElement(App), document.getElementById('root'));
+        // DOMContentLoadedを待ってからReactアプリをレンダリング
+        // window.onload を使用して、全てのスクリプトとリソースの読み込みを待つ
+        window.onload = function() {
+            const container = document.getElementById('root');
+            if (window.ReactDOM) { // ReactDOMが定義されているか明示的に確認
+                const root = window.ReactDOM.createRoot(container);
+                root.render(React.createElement(App));
+            } else {
+                console.error("ReactDOM is not defined. Cannot render React app.");
+                // Fallback UI or error message if ReactDOM is truly unavailable
+                container.innerHTML = '<div style="text-align: center; padding: 20px; color: red;">エラー: アプリケーションを読み込めませんでした。ブラウザのコンソールをご確認ください。</div>';
+            }
+        };
     </script>
 </body>
 </html>
