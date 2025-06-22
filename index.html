@@ -986,8 +986,8 @@
                         },
                         "CSVにエクスポート"
                     )
-                ),
-
+                )
+,
                 /* 商品一覧テーブル */
                 React.createElement(
                     "h2",
@@ -1135,24 +1135,77 @@
 
             // localStorageからのデータ読み込み (初回ロード時のみ)
             useEffect(() => {
-                try {
-                    const storedProducts = localStorage.getItem(LOCAL_STORAGE_KEY);
-                    if (storedProducts) {
-                        const parsedProducts = JSON.parse(storedProducts);
-                        // IDが重複しないように、新しいIDを割り当て直すなど、必要に応じて調整
-                        // 今回は単純なデモのため、そのまま使用。本番ではUUIDなど推奨
-                        setProductData(parsedProducts.map((p, index) => ({ ...p, id: p.id || index + 1 })));
-                    } else {
-                        // 初回起動時にデフォルトの商品を追加することも可能
-                        // setProductData([{ id: 1, name: 'デフォルト商品', unit: '個', price: 1000 }]);
+                const loadInitialProducts = async () => {
+                    try {
+                        let initialProducts = [];
+                        let loadedFromCSV = false;
+
+                        // 1. Try to load from Data/products.csv
+                        try {
+                            const response = await fetch('Data/products.csv');
+                            if (response.ok) {
+                                const csvString = await response.text();
+                                const lines = csvString.split('\n').filter(line => line.trim() !== '');
+                                const csvProducts = [];
+                                let currentMaxId = 0; // Temporary ID counter for CSV products
+
+                                for (const line of lines) {
+                                    const parts = line.split(',');
+                                    if (parts.length === 3) { // Expecting name, unit, price
+                                        const name = parts[0].trim();
+                                        const unit = parts[1].trim();
+                                        const price = parseFloat(parts[2].trim());
+                                        if (name && unit && !isNaN(price)) {
+                                            currentMaxId++;
+                                            csvProducts.push({ id: currentMaxId, name, unit, price });
+                                        } else {
+                                            console.warn("Invalid CSV row skipped (missing name, unit, or invalid price):", line);
+                                        }
+                                    } else {
+                                        console.warn("Invalid CSV format skipped (expected 3 parts):", line);
+                                    }
+                                }
+                                // Sort products alphabetically by name
+                                initialProducts = csvProducts.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+                                loadedFromCSV = true;
+                                console.log("Products loaded from Data/products.csv");
+                                showMessageModal('商品データを「Data/products.csv」から読み込みました。');
+                            } else {
+                                console.warn(`Failed to fetch Data/products.csv: ${response.status} ${response.statusText}. Falling back to localStorage.`);
+                                showMessageModal('「Data/products.csv」の読み込みに失敗しました。ローカルストレージを確認します。');
+                            }
+                        } catch (csvError) {
+                            console.warn("Error fetching Data/products.csv:", csvError);
+                            showMessageModal('「Data/products.csv」の読み込み中にエラーが発生しました。ローカルストレージを確認します。');
+                        }
+
+                        // 2. If not loaded from CSV, try localStorage
+                        if (!loadedFromCSV) {
+                            const storedProducts = localStorage.getItem(LOCAL_STORAGE_KEY);
+                            if (storedProducts) {
+                                const parsedProducts = JSON.parse(storedProducts);
+                                // Ensure IDs are unique and sort by name
+                                initialProducts = parsedProducts.map((p, index) => ({ ...p, id: p.id || index + 1 }))
+                                                                .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+                                console.log("Products loaded from localStorage.");
+                                showMessageModal('商品データをローカルストレージから読み込みました。');
+                            } else {
+                                console.log("No products found in localStorage. Starting with empty data.");
+                                showMessageModal('商品データが見つかりませんでした。');
+                            }
+                        }
+
+                        setProductData(initialProducts);
+                        setIsLoading(false); // データロード完了
+                    } catch (finalError) {
+                        console.error("Failed to initialize products:", finalError);
+                        showMessageModal(`商品データの初期化中に致命的なエラーが発生しました: ${finalError.message}`);
+                        setIsLoading(false); // エラー時もローディングを解除
                     }
-                    setIsLoading(false); // データロード完了
-                } catch (error) {
-                    console.error("Failed to load products from localStorage:", error);
-                    showMessageModal(`商品データの読み込みに失敗しました: ${error.message}`);
-                    setIsLoading(false); // エラー時もローディングを解除
-                }
-            }, []);
+                };
+
+                loadInitialProducts();
+            }, []); // Empty dependency array means this runs once on mount
 
             // productDataが変更されたらlocalStorageに保存
             useEffect(() => {
