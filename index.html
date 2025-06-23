@@ -1231,10 +1231,10 @@
                     if (savedData) {
                         const parsedData = JSON.parse(savedData);
                         setProductData(parsedData);
-                        showMessageModal('商品データをローカルストレージから読み込みました。');
+                        // showMessageModal('商品データをローカルストレージから読み込みました。'); // この行を削除
                     } else {
                         setProductData([]); // データがない場合は空で初期化
-                        showMessageModal('ローカルストレージに商品データが見つかりませんでした。');
+                        // showMessageModal('ローカルストレージに商品データが見つかりませんでした。'); // この行を削除
                     }
                 } catch (error) {
                     console.error("Error reading from localStorage:", error);
