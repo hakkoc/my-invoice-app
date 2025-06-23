@@ -14,6 +14,31 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">\
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>\
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase global variables
+        window.__app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        window.__firebase_config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        window.__initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Make Firebase functions globally available for the React script
+        window.firebaseApp = initializeApp(window.__firebase_config);
+        window.db = getFirestore(window.firebaseApp);
+        window.auth = getAuth(window.firebaseApp);
+        window.firebaseFirestore = {
+            doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs
+        };
+        window.firebaseAuth = {
+            signInAnonymously, signInWithCustomToken, onAuthStateChanged
+        };
+
+        // Ensure React is loaded before the App component runs
+        // This script will execute AFTER the React CDN script because it's type="module"
+    </script>
     <style>
         body {
             font-family: 'Inter', 'Yu Gothic', 'Meiryo', sans-serif; /* 日本語フォントを優先 */
@@ -66,9 +91,6 @@
         const { useState, useEffect, useCallback, useRef } = React;
         const { jsPDF } = window.jspdf;
 
-        // localStorageのキー
-        const LOCAL_STORAGE_KEY = 'quotation_tool_products';
-
         // グローバルなメッセージモーダルコンポーネント
         const GlobalMessageModal = ({ show, content, onClose, onConfirm, showConfirmButton }) => {
             if (!show) return null;
@@ -119,7 +141,6 @@
             const [weeksValidity, setWeeksValidity] = useState(2); 
 
             // State for sender details (from PDF)
-            // const [senderCompanyName, setSenderCompanyName] = useState(''); // 削除
             // 郵便番号を2つの部分に分割して管理
             const [senderPostalCodePart1, setSenderPostalCodePart1] = useState(''); // 初期値なし
             const [senderPostalCodePart2, setSenderPostalCodePart2] = useState(''); // 初期値なし
@@ -1190,6 +1211,16 @@
             const [productData, setProductData] = useState([]);
             const [currentPage, setCurrentPage] = useState('quotation'); // 'quotation' or 'management'
             const [isLoading, setIsLoading] = useState(true); // ローディング状態
+            const [userId, setUserId] = useState(null); // Firebase User ID
+            const [isAuthReady, setIsAuthReady] = useState(false); // Firebase Auth Ready State
+
+            // Firebaseのインスタンスをグローバルスコープから取得
+            const db = window.db;
+            const auth = window.auth;
+            const { doc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } = window.firebaseFirestore;
+            const { signInAnonymously, signInWithCustomToken, onAuthStateChanged } = window.firebaseAuth;
+            const appId = window.__app_id;
+            const initialAuthToken = window.__initial_auth_token;
 
             // メッセージモーダル表示関数
             const showMessageModal = (content) => {
@@ -1221,127 +1252,123 @@
                 closeGlobalModal();
             };
 
-            // localStorageからのデータ読み込み (初回ロード時のみ)
+            // Firebase認証処理
             useEffect(() => {
-                const loadInitialProducts = async () => {
+                const setupAuth = async () => {
                     try {
-                        let initialProducts = [];
-                        let loadedFromCSV = false;
-
-                        // 1. Try to load from Data/products.csv
-                        try {
-                            const response = await fetch('Data/products.csv');
-                            if (response.ok) {
-                                const csvString = await response.text();
-                                const lines = csvString.split('\n').filter(line => line.trim() !== '');
-                                const csvProducts = [];
-                                let currentMaxId = 0; // Temporary ID counter for CSV products
-
-                                for (const line of lines) {
-                                    const parts = line.split(',');
-                                    if (parts.length === 3) { // Expecting name, unit, price
-                                        const name = parts[0].trim();
-                                        const unit = parts[1].trim();
-                                        const price = parseFloat(parts[2].trim());
-                                        if (name && unit && !isNaN(price)) {
-                                            currentMaxId++;
-                                            csvProducts.push({ id: currentMaxId, name, unit, price });
-                                        } else {
-                                            console.warn("Invalid CSV row skipped (missing name, unit, or invalid price):", line);
-                                        }
-                                    } else {
-                                        console.warn("Invalid CSV format skipped (expected 3 parts):", line);
-                                    }
-                                }
-                                // Sort products alphabetically by name
-                                initialProducts = csvProducts.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-                                loadedFromCSV = true;
-                                console.log("Products loaded from Data/products.csv");
-                                // 起動時のData/products.csvからの読み込み時はメッセージを表示しない
-                                // showMessageModal('商品データを「Data/products.csv」から読み込みました。'); 
-                            } else {
-                                console.warn(`Failed to fetch Data/products.csv: ${response.status} ${response.statusText}. Falling back to localStorage.`);
-                                showMessageModal('「Data/products.csv」の読み込みに失敗しました。ローカルストレージを確認します。');
-                            }
-                        } catch (csvError) {
-                            console.warn("Error fetching Data/products.csv:", csvError);
-                            showMessageModal('「Data/products.csv」の読み込み中にエラーが発生しました。ローカルストレージを確認します。');
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
                         }
-
-                        // 2. If not loaded from CSV, try localStorage
-                        if (!loadedFromCSV) {
-                            const storedProducts = localStorage.getItem(LOCAL_STORAGE_KEY);
-                            if (storedProducts) {
-                                const parsedProducts = JSON.parse(storedProducts);
-                                // Ensure IDs are unique and sort by name
-                                initialProducts = parsedProducts.map((p, index) => ({ ...p, id: p.id || index + 1 }))
-                                                                .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-                                console.log("Products loaded from localStorage.");
-                                showMessageModal('商品データをローカルストレージから読み込みました。');
-                            } else {
-                                console.log("No products found in localStorage. Starting with empty data.");
-                                showMessageModal('商品データが見つかりませんでした。');
-                            }
-                        }
-
-                        setProductData(initialProducts);
-                        setIsLoading(false); // データロード完了
-                    } catch (finalError) {
-                        console.error("Failed to initialize products:", finalError);
-                        showMessageModal(`商品データの初期化中に致命的なエラーが発生しました: ${finalError.message}`);
-                        setIsLoading(false); // エラー時もローディングを解除
+                    } catch (error) {
+                        console.error("Firebase Auth Error:", error);
+                        showMessageModal(`認証エラー: ${error.message}`);
                     }
                 };
 
-                loadInitialProducts();
-            }, []); // Empty dependency array means this runs once on mount
-
-            // productDataが変更されたらlocalStorageに保存
-            useEffect(() => {
-                if (!isLoading) { // 初期ロードが完了してから保存を開始
-                    try {
-                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(productData));
-                    } catch (error) {
-                        console.error("Failed to save products to localStorage:", error);
-                        showMessageModal(`商品データの保存に失敗しました: ${error.message}`);
+                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        setUserId(user.uid);
+                        setIsAuthReady(true);
+                        console.log("Firebase Auth Ready. User ID:", user.uid);
+                    } else {
+                        // If no user, trigger anonymous sign-in
+                        setupAuth();
                     }
-                }
-            }, [productData, isLoading]);
+                });
 
-            // 商品を追加する関数 (localStorageへ)
+                return () => unsubscribe();
+            }, [auth, initialAuthToken]); // auth and initialAuthToken as dependencies
+
+            // Firestoreからのデータ読み込み (isAuthReadyがtrueになったら実行)
+            useEffect(() => {
+                if (!isAuthReady || !userId) return; // Wait for auth to be ready and userId to be set
+
+                const productsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/products`);
+                const q = query(productsCollectionRef);
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const products = snapshot.docs.map(doc => ({
+                        id: doc.id, // Firestore document ID
+                        ...doc.data()
+                    })).sort((a, b) => a.name.localeCompare(b.name, 'ja')); // 名前でソート
+                    setProductData(products);
+                    setIsLoading(false); // データロード完了
+                    console.log("Products loaded from Firestore:", products);
+                }, (error) => {
+                    console.error("Firestore Error fetching products:", error);
+                    showMessageModal(`商品データの取得エラー: ${error.message}`);
+                    setIsLoading(false); // エラー時もローディングを解除
+                });
+
+                // クリーンアップ関数
+                return () => unsubscribe();
+            }, [db, userId, appId, isAuthReady, collection, query, onSnapshot]); // Firestore hooks as dependencies
+
+            // 商品を追加する関数 (Firestoreへ)
             const addProduct = async (newProduct) => {
-                // IDを生成 (簡易的な連番ID)
-                const newId = productData.length > 0 ? Math.max(...productData.map(p => p.id)) + 1 : 1;
-                const productWithId = { ...newProduct, id: newId };
-                setProductData(prevProducts => {
-                    const updated = [...prevProducts, productWithId];
-                    // 名前でソートして表示を整理
-                    return updated.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-                });
-                showMessageModal('商品が追加されました。');
+                if (!userId) {
+                    showMessageModal('ユーザー認証が完了していません。');
+                    return;
+                }
+                try {
+                    const docRef = await addDoc(collection(db, `artifacts/${appId}/users/${userId}/products`), {
+                        name: newProduct.name,
+                        unit: newProduct.unit,
+                        price: newProduct.price
+                    });
+                    showMessageModal('商品が追加されました。');
+                    console.log("Document written with ID: ", docRef.id);
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                    showMessageModal(`商品の追加に失敗しました: ${e.message}`);
+                }
             };
 
-            // 商品を更新する関数 (localStorageへ)
+            // 商品を更新する関数 (Firestoreへ)
             const updateProduct = async (updatedProduct) => {
-                setProductData(prevProducts => {
-                    const updated = prevProducts.map(p => p.id === updatedProduct.id ? updatedProduct : p);
-                     // 名前でソートして表示を整理
-                    return updated.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-                });
-                showMessageModal('商品が更新されました。');
+                if (!userId) {
+                    showMessageModal('ユーザー認証が完了していません。');
+                    return;
+                }
+                try {
+                    // updatedProduct.idはFirestoreのドキュメントID
+                    await setDoc(doc(db, `artifacts/${appId}/users/${userId}/products`, updatedProduct.id), {
+                        name: updatedProduct.name,
+                        unit: updatedProduct.unit,
+                        price: updatedProduct.price
+                    });
+                    showMessageModal('商品が更新されました。');
+                } catch (e) {
+                    console.error("Error updating document: ", e);
+                    showMessageModal(`商品の更新に失敗しました: ${e.message}`);
+                }
             };
 
-            // 商品を削除する関数 (localStorageへ)
+            // 商品を削除する関数 (Firestoreへ)
             const deleteProduct = async (id) => {
-                setProductData(prevProducts => prevProducts.filter(p => p.id !== id));
-                showMessageModal('商品が削除されました。');
+                if (!userId) {
+                    showMessageModal('ユーザー認証が完了していません。');
+                    return;
+                }
+                try {
+                    await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/products`, id));
+                    showMessageModal('商品が削除されました。');
+                } catch (e) {
+                    console.error("Error deleting document: ", e);
+                    showMessageModal(`商品の削除に失敗しました: ${e.message}`);
+                }
             };
 
-            // CSVから商品をインポートする関数
-            const importProductsFromCsv = (csvString) => {
+            // CSVから商品をインポートする関数 (Firestoreへ追加)
+            const importProductsFromCsv = async (csvString) => {
+                if (!userId) {
+                    showMessageModal('ユーザー認証が完了していません。');
+                    return;
+                }
                 const lines = csvString.split('\n').filter(line => line.trim() !== '');
-                const newProducts = [];
-                let currentMaxId = productData.length > 0 ? Math.max(...productData.map(p => p.id)) : 0;
+                const newProductsToFirestore = [];
 
                 for (const line of lines) {
                     const parts = line.split(',');
@@ -1351,8 +1378,8 @@
                         const price = parseFloat(parts[2].trim());
 
                         if (name && unit && !isNaN(price)) {
-                            currentMaxId++;
-                            newProducts.push({ id: currentMaxId, name, unit, price });
+                            // Firestoreにはidは自動生成されるので、ここではidは含めない
+                            newProductsToFirestore.push({ name, unit, price });
                         } else {
                             console.warn("Invalid CSV row skipped:", line);
                         }
@@ -1361,27 +1388,35 @@
                     }
                 }
 
-                if (newProducts.length > 0) {
-                    setProductData(prevProducts => {
-                        // 既存の商品と重複しないようにマージ（名前で重複チェック、簡易的な例）
-                        const existingNames = new Set(prevProducts.map(p => p.name));
-                        const uniqueNewProducts = newProducts.filter(p => !existingNames.has(p.name));
-                        
-                        const mergedProducts = [...prevProducts, ...uniqueNewProducts];
-                        return mergedProducts.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-                    });
-                    showMessageModal(`${newProducts.length}件の商品をCSVからインポートしました。`);
+                if (newProductsToFirestore.length > 0) {
+                    try {
+                        const existingNames = new Set(productData.map(p => p.name));
+                        let importedCount = 0;
+                        for (const product of newProductsToFirestore) {
+                            if (!existingNames.has(product.name)) {
+                                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/products`), product);
+                                importedCount++;
+                            } else {
+                                console.log(`Skipped duplicate product: ${product.name}`);
+                            }
+                        }
+                        showMessageModal(`${importedCount}件の商品をCSVからインポートしました。（重複はスキップ）`);
+                    } catch (e) {
+                        console.error("Error importing products from CSV:", e);
+                        showMessageModal(`CSVからのインポートに失敗しました: ${e.message}`);
+                    }
                 } else {
                     showMessageModal('有効な商品データがCSVファイルに見つかりませんでした。');
                 }
             };
 
-            // 商品をCSVにエクスポートする関数
+            // 商品をCSVにエクスポートする関数 (Firestoreから取得してCSV生成)
             const exportProductsToCsv = () => {
                 if (productData.length === 0) {
                     showMessageModal('エクスポートする商品データがありません。');
                     return;
                 }
+                // Firestoreから取得したproductDataをCSV形式に変換
                 const csvContent = productData.map(p => `${p.name},${p.unit},${p.price}`).join('\n');
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
@@ -1394,14 +1429,14 @@
             };
 
 
-            if (isLoading) {
+            if (isLoading || !isAuthReady) {
                 return React.createElement(
                     "div",
                     { className: "min-h-screen p-4 sm:p-8 bg-gray-100 flex justify-center items-center" },
                     React.createElement(
                         "div",
                         { className: "text-center text-lg font-bold text-gray-700" },
-                        "Loading..."
+                        "データをロード中..."
                     )
                 );
             }
