@@ -7,38 +7,18 @@
     <!-- Favicon -->
     <link rel="icon" href="https://placehold.co/32x32/ffffff/000000?text=積" type="image/png">
     <!-- Apple Touch Icon (iOSホーム画面用) -->
-    <link rel="apple-touch-icon" href="https://placehold.co/180x180/ffffff/000000?text=積">\
+    <link rel="apple-touch-icon" href="https://placehold.co/180x180/ffffff/000000?text=積">
     <!-- Web App Manifest (Android PWA設定用) -->
     <link rel="manifest" href="/manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">\
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>\
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <!-- Firebase SDKs -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase global variables
-        window.__app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        window.__firebase_config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        window.__initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    <!-- React and Babel for JSX transpilation -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" onerror="console.error('Failed to load React script');"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onerror="console.error('Failed to load ReactDOM script');"></script>
 
-        // Make Firebase functions globally available for the React script
-        window.firebaseApp = initializeApp(window.__firebase_config);
-        window.db = getFirestore(window.firebaseApp);
-        window.auth = getAuth(window.firebaseApp);
-        window.firebaseFirestore = {
-            doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs
-        };
-        window.firebaseAuth = {
-            signInAnonymously, signInWithCustomToken, onAuthStateChanged
-        };
-
-        // Ensure React is loaded before the App component runs
-        // This script will execute AFTER the React CDN script because it's type="module"
-    </script>
     <style>
         body {
             font-family: 'Inter', 'Yu Gothic', 'Meiryo', sans-serif; /* 日本語フォントを優先 */
@@ -82,11 +62,8 @@
     <!-- PDF出力用にレンダリングする非表示の要素 -->
     <div id="pdf-export-content"></div>
 
-    <!-- React and Babel for JSX transpilation -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
-    <!-- React Code - Transpiled from JSX manually -->
+    <!-- React Code -->
     <script>
         const { useState, useEffect, useCallback, useRef } = React;
         const { jsPDF } = window.jspdf;
@@ -374,7 +351,7 @@
                         </div>
 
                         <p style="text-align: right; font-size: 11px; margin-top: 30px;">
-                            本見積書の有効期限は、${displayValidityPeriod}です。
+                            本見積書の有効期限は、御見積後${weeksValidity}週間です。
                         </p>
                     </div>
                 `;
@@ -1210,17 +1187,9 @@
             // 商品データとページ管理
             const [productData, setProductData] = useState([]);
             const [currentPage, setCurrentPage] = useState('quotation'); // 'quotation' or 'management'
-            const [isLoading, setIsLoading] = useState(true); // ローディング状態
-            const [userId, setUserId] = useState(null); // Firebase User ID
-            const [isAuthReady, setIsAuthReady] = useState(false); // Firebase Auth Ready State
-
-            // Firebaseのインスタンスをグローバルスコープから取得
-            const db = window.db;
-            const auth = window.auth;
-            const { doc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } = window.firebaseFirestore;
-            const { signInAnonymously, signInWithCustomToken, onAuthStateChanged } = window.firebaseAuth;
-            const appId = window.__app_id;
-            const initialAuthToken = window.__initial_auth_token;
+            
+            // ローディング状態はLocalStorageから直接読み込むため不要
+            // const [isLoading, setIsLoading] = useState(true); 
 
             // メッセージモーダル表示関数
             const showMessageModal = (content) => {
@@ -1252,123 +1221,68 @@
                 closeGlobalModal();
             };
 
-            // Firebase認証処理
-            useEffect(() => {
-                const setupAuth = async () => {
-                    try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    } catch (error) {
-                        console.error("Firebase Auth Error:", error);
-                        showMessageModal(`認証エラー: ${error.message}`);
-                    }
-                };
+            // ローカルストレージキー
+            const LOCAL_STORAGE_KEY = 'quotationTool_productData';
 
-                const unsubscribe = onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        setUserId(user.uid);
-                        setIsAuthReady(true);
-                        console.log("Firebase Auth Ready. User ID:", user.uid);
+            // 初期の商品データ読み込み (LocalStorageから)
+            useEffect(() => {
+                try {
+                    const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+                    if (savedData) {
+                        const parsedData = JSON.parse(savedData);
+                        setProductData(parsedData);
+                        showMessageModal('商品データをローカルストレージから読み込みました。');
                     } else {
-                        // If no user, trigger anonymous sign-in
-                        setupAuth();
+                        setProductData([]); // データがない場合は空で初期化
+                        showMessageModal('ローカルストレージに商品データが見つかりませんでした。');
                     }
-                });
+                } catch (error) {
+                    console.error("Error reading from localStorage:", error);
+                    setProductData([]); // エラー時は空で初期化
+                    showMessageModal('商品データの読み込みに失敗しました。');
+                }
+            }, []);
 
-                return () => unsubscribe();
-            }, [auth, initialAuthToken]); // auth and initialAuthToken as dependencies
-
-            // Firestoreからのデータ読み込み (isAuthReadyがtrueになったら実行)
+            // productDataが変更されるたびにLocalStorageに保存
             useEffect(() => {
-                if (!isAuthReady || !userId) return; // Wait for auth to be ready and userId to be set
+                try {
+                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(productData));
+                } catch (error) {
+                    console.error("Error writing to localStorage:", error);
+                    showMessageModal('商品データの保存に失敗しました。');
+                }
+            }, [productData]);
 
-                const productsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/products`);
-                const q = query(productsCollectionRef);
 
-                const unsubscribe = onSnapshot(q, (snapshot) => {
-                    const products = snapshot.docs.map(doc => ({
-                        id: doc.id, // Firestore document ID
-                        ...doc.data()
-                    })).sort((a, b) => a.name.localeCompare(b.name, 'ja')); // 名前でソート
-                    setProductData(products);
-                    setIsLoading(false); // データロード完了
-                    console.log("Products loaded from Firestore:", products);
-                }, (error) => {
-                    console.error("Firestore Error fetching products:", error);
-                    showMessageModal(`商品データの取得エラー: ${error.message}`);
-                    setIsLoading(false); // エラー時もローディングを解除
-                });
-
-                // クリーンアップ関数
-                return () => unsubscribe();
-            }, [db, userId, appId, isAuthReady, collection, query, onSnapshot]); // Firestore hooks as dependencies
-
-            // 商品を追加する関数 (Firestoreへ)
+            // 商品を追加する関数 (LocalStorageとStateを更新)
             const addProduct = async (newProduct) => {
-                if (!userId) {
-                    showMessageModal('ユーザー認証が完了していません。');
-                    return;
-                }
-                try {
-                    const docRef = await addDoc(collection(db, `artifacts/${appId}/users/${userId}/products`), {
-                        name: newProduct.name,
-                        unit: newProduct.unit,
-                        price: newProduct.price
-                    });
-                    showMessageModal('商品が追加されました。');
-                    console.log("Document written with ID: ", docRef.id);
-                } catch (e) {
-                    console.error("Error adding document: ", e);
-                    showMessageModal(`商品の追加に失敗しました: ${e.message}`);
-                }
+                // IDは既存の最大値+1で生成
+                const newId = productData.length > 0 ? Math.max(...productData.map(p => p.id)) + 1 : 1;
+                const productWithId = { ...newProduct, id: newId };
+                const updatedProducts = [...productData, productWithId].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+                setProductData(updatedProducts);
+                showMessageModal('商品が追加され、ローカルストレージに保存されました。');
             };
 
-            // 商品を更新する関数 (Firestoreへ)
+            // 商品を更新する関数 (LocalStorageとStateを更新)
             const updateProduct = async (updatedProduct) => {
-                if (!userId) {
-                    showMessageModal('ユーザー認証が完了していません。');
-                    return;
-                }
-                try {
-                    // updatedProduct.idはFirestoreのドキュメントID
-                    await setDoc(doc(db, `artifacts/${appId}/users/${userId}/products`, updatedProduct.id), {
-                        name: updatedProduct.name,
-                        unit: updatedProduct.unit,
-                        price: updatedProduct.price
-                    });
-                    showMessageModal('商品が更新されました。');
-                } catch (e) {
-                    console.error("Error updating document: ", e);
-                    showMessageModal(`商品の更新に失敗しました: ${e.message}`);
-                }
+                const updatedProducts = productData.map(p => (p.id === updatedProduct.id ? updatedProduct : p)).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+                setProductData(updatedProducts);
+                showMessageModal('商品が更新され、ローカルストレージに保存されました。');
             };
 
-            // 商品を削除する関数 (Firestoreへ)
+            // 商品を削除する関数 (LocalStorageとStateを更新)
             const deleteProduct = async (id) => {
-                if (!userId) {
-                    showMessageModal('ユーザー認証が完了していません。');
-                    return;
-                }
-                try {
-                    await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/products`, id));
-                    showMessageModal('商品が削除されました。');
-                } catch (e) {
-                    console.error("Error deleting document: ", e);
-                    showMessageModal(`商品の削除に失敗しました: ${e.message}`);
-                }
+                const updatedProducts = productData.filter(p => p.id !== id).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+                setProductData(updatedProducts);
+                showMessageModal('商品が削除され、ローカルストレージに保存されました。');
             };
 
-            // CSVから商品をインポートする関数 (Firestoreへ追加)
+            // CSVから商品をインポートする関数 (FileReaderを使用し、LocalStorageに保存)
             const importProductsFromCsv = async (csvString) => {
-                if (!userId) {
-                    showMessageModal('ユーザー認証が完了していません。');
-                    return;
-                }
                 const lines = csvString.split('\n').filter(line => line.trim() !== '');
-                const newProductsToFirestore = [];
+                const importedProducts = [];
+                let currentMaxId = productData.length > 0 ? Math.max(...productData.map(p => p.id)) : 0;
 
                 for (const line of lines) {
                     const parts = line.split(',');
@@ -1378,8 +1292,14 @@
                         const price = parseFloat(parts[2].trim());
 
                         if (name && unit && !isNaN(price)) {
-                            // Firestoreにはidは自動生成されるので、ここではidは含めない
-                            newProductsToFirestore.push({ name, unit, price });
+                            // 既存の商品名との重複チェック
+                            const isDuplicate = productData.some(p => p.name === name) || importedProducts.some(p => p.name === name);
+                            if (!isDuplicate) {
+                                currentMaxId++;
+                                importedProducts.push({ id: currentMaxId, name, unit, price });
+                            } else {
+                                console.warn(`Skipped duplicate product from CSV: ${name}`);
+                            }
                         } else {
                             console.warn("Invalid CSV row skipped:", line);
                         }
@@ -1388,58 +1308,47 @@
                     }
                 }
 
-                if (newProductsToFirestore.length > 0) {
-                    try {
-                        const existingNames = new Set(productData.map(p => p.name));
-                        let importedCount = 0;
-                        for (const product of newProductsToFirestore) {
-                            if (!existingNames.has(product.name)) {
-                                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/products`), product);
-                                importedCount++;
-                            } else {
-                                console.log(`Skipped duplicate product: ${product.name}`);
-                            }
-                        }
-                        showMessageModal(`${importedCount}件の商品をCSVからインポートしました。（重複はスキップ）`);
-                    } catch (e) {
-                        console.error("Error importing products from CSV:", e);
-                        showMessageModal(`CSVからのインポートに失敗しました: ${e.message}`);
-                    }
+                if (importedProducts.length > 0) {
+                    const updatedProducts = [...productData, ...importedProducts].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+                    setProductData(updatedProducts);
+                    showMessageModal(`${importedProducts.length}件の商品をCSVからインポートし、ローカルストレージに保存しました。（重複はスキップ）`);
                 } else {
                     showMessageModal('有効な商品データがCSVファイルに見つかりませんでした。');
                 }
             };
 
-            // 商品をCSVにエクスポートする関数 (Firestoreから取得してCSV生成)
+            // 商品をCSVにエクスポートする関数 (LocalStorageから取得してCSV生成)
             const exportProductsToCsv = () => {
                 if (productData.length === 0) {
                     showMessageModal('エクスポートする商品データがありません。');
                     return;
                 }
-                // Firestoreから取得したproductDataをCSV形式に変換
+                const header = "商品名,単位,単価\n";
                 const csvContent = productData.map(p => `${p.name},${p.unit},${p.price}`).join('\n');
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const fullCsv = header + csvContent;
+                const blob = new Blob([fullCsv], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                link.download = 'products.csv';
+                link.download = 'products.csv'; // ダウンロード時のファイル名
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
                 showMessageModal('商品データをCSVファイルにエクスポートしました！');
             };
 
-
-            if (isLoading || !isAuthReady) {
-                return React.createElement(
-                    "div",
-                    { className: "min-h-screen p-4 sm:p-8 bg-gray-100 flex justify-center items-center" },
-                    React.createElement(
-                        "div",
-                        { className: "text-center text-lg font-bold text-gray-700" },
-                        "データをロード中..."
-                    )
-                );
-            }
+            // LocalStorageの読み込みは非同期ではないため、isLoading状態は基本的に不要
+            // 必要であれば、初期読み込み完了後にのみUIを表示するロジックに変更可能
+            // if (isLoading) {
+            //     return React.createElement(
+            //         "div",
+            //         { className: "min-h-screen p-4 sm:p-8 bg-gray-100 flex justify-center items-center" },
+            //         React.createElement(
+            //             "div",
+            //             { className: "text-center text-lg font-bold text-gray-700" },
+            //             "データをロード中..."
+            //         )
+            //     );
+            // }
 
             return React.createElement(
                 "div",
@@ -1500,8 +1409,10 @@
         // DOMContentLoadedを待ってからReactアプリをレンダリング
         // window.onload を使用して、全てのスクリプトとリソースの読み込みを待つ
         window.onload = function() {
+            console.log("window.onload fired."); // Debugging line
             const container = document.getElementById('root');
             if (window.ReactDOM) { // ReactDOMが定義されているか明示的に確認
+                console.log("ReactDOM is available. Proceeding with render."); // Debugging line
                 const root = window.ReactDOM.createRoot(container);
                 root.render(React.createElement(App));
             } else {
